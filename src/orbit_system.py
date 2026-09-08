@@ -58,7 +58,12 @@ from perception.orbit_perception import OrbitPerception
 from perception.preprocess import filter_range
 from tracking.orbit_tracker import OrbitTracker, WORLD_REFERENCE_FRAME
 from tracking.proposal_adapter import proposals_to_detections
-from visualization.pipeline_view import render_topdown, view_model_from_state
+from visualization.pipeline_view import view_model_from_state
+from visualization.dashboard import (
+    launch_dashboard,
+    save_dashboard_frames,
+)
+from visualization.architecture_view import render_architecture_diagram
 from world_model.orbit_world_model import OrbitWorldModel
 
 
@@ -238,7 +243,30 @@ def get_args():
     parser.add_argument(
         "--show",
         action="store_true",
-        help="Matplotlib top-down view from pipeline state",
+        help="Open the Visual Intelligence dashboard (Matplotlib)",
+    )
+    parser.add_argument(
+        "--dashboard",
+        action="store_true",
+        help="Same as --show: multi-panel dashboard from real pipeline states",
+    )
+    parser.add_argument(
+        "--save-figures",
+        type=str,
+        default=None,
+        help="Directory for dashboard PNG frames",
+    )
+    parser.add_argument(
+        "--lidar-color",
+        choices=("elevation", "terrain"),
+        default="elevation",
+        help="3D LiDAR colour mode: Z elevation or RANSAC ground mask",
+    )
+    parser.add_argument(
+        "--save-architecture",
+        type=str,
+        default=None,
+        help="Write a static architecture diagram PNG (not live data)",
     )
     return parser.parse_args()
 
@@ -278,13 +306,38 @@ def main():
         }
 
     last_state = None
+    states = []
     for frame in frames:
         state = system.process_frame(clouds[frame], frame)
         print_frame_metrics(state)
         last_state = state
+        states.append(state)
 
-    if args.show and last_state is not None:
-        render_topdown(last_state, show=True)
+    if args.save_architecture:
+        render_architecture_diagram(
+            save_path=args.save_architecture,
+            show=False,
+        )
+        print(f"Wrote architecture diagram: {args.save_architecture}")
+
+    if args.save_figures and states:
+        paths = save_dashboard_frames(
+            states,
+            args.save_figures,
+            sequence=str(args.sequence),
+            source=args.source,
+            lidar_mode=args.lidar_color,
+        )
+        print(f"Wrote {len(paths)} dashboard frames to {args.save_figures}")
+
+    if (args.show or args.dashboard) and states:
+        launch_dashboard(
+            states,
+            sequence=str(args.sequence),
+            source=args.source,
+            lidar_mode=args.lidar_color,
+            show=True,
+        )
 
 
 if __name__ == "__main__":

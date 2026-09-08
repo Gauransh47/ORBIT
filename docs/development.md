@@ -53,7 +53,7 @@ Python 3 with:
 |---------|-------------|
 | numpy | everything |
 | open3d | I/O, RANSAC, 3D viewers, most `__main__` demos |
-| matplotlib | `adaptive_map.py`, `elevation_map.py` |
+| matplotlib | maps, Visual Intelligence dashboard |
 | scikit-learn | `object_detection.py` only (DBSCAN) |
 | pytest | tests |
 
@@ -99,6 +99,15 @@ PYTHONPATH=src python src/visualization/adaptive_map.py
 PYTHONPATH=src python src/visualization/elevation_map.py
 PYTHONPATH=src python src/visualization/adaptive_grid_viewer.py
 ```
+
+End-to-end prototype + Visual Intelligence dashboard:
+
+```bash
+PYTHONPATH=src python src/orbit_system.py --source kitti --sequence 00 --start 0 --end 9 --dashboard
+PYTHONPATH=src python src/orbit_system.py --source kitti --sequence 00 --start 0 --end 9 --save-figures output/dashboard
+```
+
+See [dashboard.md](dashboard.md) for colour meanings and panel sources.
 
 DBSCAN sidecar:
 

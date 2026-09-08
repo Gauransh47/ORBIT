@@ -12,6 +12,7 @@ are never described as finished unless they exist in the code.
 | [Project context](project-context.md) | Official statement, current status, gap to the expected solution |
 | [Architecture](architecture.md) | How the **current** code is structured and how data flows |
 | [Development](development.md) | Setup, how to run scripts, tests, conventions |
+| [Dashboard](dashboard.md) | Visual Intelligence dashboard (real pipeline outputs) |
 
 There is no packaged Python distribution and no root README.
 Application code lives under `src/`.
