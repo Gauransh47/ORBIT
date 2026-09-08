@@ -73,7 +73,8 @@ MAX_DIMENSION_DIFFERENCE = 4.0
 MAX_MISSED_FRAMES = 2
 MIN_CONFIRMATION_HITS = 2
 
-# Reference/world frame. KITTI pose 0 is identity in this dataset.
+# Reference/world frame for this prototype: LiDAR coordinates of frame 0.
+# Detections are transformed into this frame; existing tracks are not.
 WORLD_REFERENCE_FRAME = 0
 
 

@@ -1,6 +1,8 @@
 import sys
 from pathlib import Path
 
+from collections import defaultdict
+
 import numpy as np
 import open3d as o3d
 
@@ -25,6 +27,7 @@ class ObstacleCell:
         obstacle_elevation,
         obstacle_height,
         obstacle_count,
+        ground_source="local",
     ):
         self.level = level
         self.ix = ix
@@ -35,6 +38,7 @@ class ObstacleCell:
         self.obstacle_elevation = obstacle_elevation
         self.obstacle_height = obstacle_height
         self.obstacle_count = obstacle_count
+        self.ground_source = ground_source
 
     @property
     def center(self):
@@ -78,6 +82,117 @@ def build_adaptive_grid(points, ground_mask):
     return grid
 
 
+def _ground_index(grid):
+    """Map (level, ix, iy) -> ground elevation for cells that have ground."""
+
+    index = {}
+
+    for key, cell in grid.cells.items():
+        if cell.ground_count <= 0:
+            continue
+
+        elevation = cell.ground_elevation
+        if elevation is None or not np.isfinite(elevation):
+            continue
+
+        index[key] = float(elevation)
+
+    return index
+
+
+def _ground_spatial_buckets(grid, bucket_size=1.0):
+    """1 m XY buckets of cells that have a local ground elevation."""
+
+    buckets = defaultdict(list)
+
+    for cell in grid.cells.values():
+        if cell.ground_count <= 0:
+            continue
+
+        elevation = cell.ground_elevation
+        if elevation is None or not np.isfinite(elevation):
+            continue
+
+        x, y = cell.center
+        key = (
+            int(np.floor(x / bucket_size)),
+            int(np.floor(y / bucket_size)),
+        )
+        buckets[key].append((float(x), float(y), float(elevation)))
+
+    return buckets
+
+
+def _neighbor_ground_elevation(
+    cell,
+    ground_index,
+    grid,
+    buckets,
+    search_radius_m=2.0,
+    min_neighbors=1,
+    bucket_size=1.0,
+):
+    """
+    Estimate ground Z from nearby cells that already have ground.
+
+    Prefer same-level neighbours (Chebyshev radius 1–2). If that is
+    empty — typical inside a vehicle or wall footprint — fall back to
+    ground cells whose centres lie within a local metric radius
+    (about 2 m, or 4 cell widths at coarse rings). This is local
+    terrain, not a global plane.
+    """
+
+    samples = []
+    level = int(cell.level)
+    ix = int(cell.ix)
+    iy = int(cell.iy)
+
+    for radius in range(1, 3):
+        for dx in range(-radius, radius + 1):
+            for dy in range(-radius, radius + 1):
+                if dx == 0 and dy == 0:
+                    continue
+
+                key = (level, ix + dx, iy + dy)
+                if key in ground_index:
+                    samples.append(ground_index[key])
+
+        if len(samples) >= min_neighbors:
+            return float(np.mean(samples))
+
+    if level < 3:
+        x, y = cell.center
+        parent_level = level + 1
+        parent_ix, parent_iy = grid.world_to_cell(x, y, parent_level)
+        parent_key = (parent_level, int(parent_ix), int(parent_iy))
+        if parent_key in ground_index:
+            samples.append(ground_index[parent_key])
+
+        if len(samples) >= min_neighbors:
+            return float(np.mean(samples))
+
+    cx, cy = cell.center
+    radius_m = max(search_radius_m, 4.0 * float(cell.resolution))
+    radius_sq = radius_m * radius_m
+    span = int(np.ceil(radius_m / bucket_size)) + 1
+    bx = int(np.floor(cx / bucket_size))
+    by = int(np.floor(cy / bucket_size))
+
+    metric_samples = []
+
+    for dx in range(-span, span + 1):
+        for dy in range(-span, span + 1):
+            for x, y, elevation in buckets.get((bx + dx, by + dy), ()):
+                dist_sq = (x - cx) ** 2 + (y - cy) ** 2
+                if dist_sq <= radius_sq:
+                    metric_samples.append(elevation)
+
+    if len(metric_samples) < min_neighbors:
+        return None
+
+    return float(np.mean(metric_samples))
+
+
 def extract_obstacle_cells(
     grid,
     minimum_height=0.15,
@@ -86,28 +201,37 @@ def extract_obstacle_cells(
     """
     Convert adaptive cells into an obstacle-cell representation.
 
-    A cell becomes an obstacle cell when:
-        obstacle height >= minimum_height
-
-    Height is measured relative to the local ground elevation.
+    Height is terrain-relative. If a cell has obstacle points but no
+    ground points, ground elevation is taken from nearby ground cells
+    when those neighbours exist.
     """
 
+    ground_index = _ground_index(grid)
+    buckets = _ground_spatial_buckets(grid)
     obstacle_cells = []
 
     for cell in grid.cells.values():
 
-        # Cell contains no obstacle observations.
         if cell.obstacle_count < minimum_obstacle_points:
             continue
 
-        # No ground reference available.
-        if cell.ground_count == 0:
+        obstacle_z = cell.obstacle_elevation
+        if obstacle_z is None or not np.isfinite(obstacle_z):
             continue
 
-        ground_z = cell.ground_elevation
-        obstacle_z = cell.obstacle_elevation
+        if cell.ground_count > 0 and cell.ground_elevation is not None:
+            ground_z = cell.ground_elevation
+            ground_source = "local"
+        else:
+            ground_z = _neighbor_ground_elevation(
+                cell,
+                ground_index,
+                grid,
+                buckets,
+            )
+            ground_source = "neighbor"
 
-        if ground_z is None or obstacle_z is None:
+        if ground_z is None or not np.isfinite(ground_z):
             continue
 
         height = obstacle_z - ground_z
@@ -125,6 +249,7 @@ def extract_obstacle_cells(
                 obstacle_elevation=obstacle_z,
                 obstacle_height=height,
                 obstacle_count=cell.obstacle_count,
+                ground_source=ground_source,
             )
         )
 

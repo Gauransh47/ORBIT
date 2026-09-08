@@ -340,6 +340,34 @@ class OrbitWorldModel:
                 obj.motion_state = "UNCERTAIN"
 
 
+    def sync(
+        self,
+        tracks,
+        frame_index: int,
+    ):
+        """
+        Mirror the tracker's live/coasted tracks.
+
+        Tracks the tracker has pruned are removed from the world
+        model so they do not remain as permanent UNCERTAIN ghosts.
+        """
+
+        live_ids = {
+            int(track.track_id)
+            for track in tracks
+        }
+
+        self.update(tracks, frame_index)
+
+        retired = []
+
+        for track_id in list(self.objects.keys()):
+            if track_id not in live_ids:
+                del self.objects[track_id]
+                retired.append(track_id)
+
+        return retired
+
     # --------------------------------------------------------
 
     def active_objects(

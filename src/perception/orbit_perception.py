@@ -14,6 +14,8 @@ SRC_DIR = Path(__file__).resolve().parents[1]
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
+from perception.object_proposal import ObjectProposal
+from perception.ground_estimation import estimate_ground
 from mapping.adaptive_grid import AdaptiveGrid
 
 from perception.terrain_obstacle_detection import (
@@ -91,35 +93,78 @@ class OrbitPerception:
     # ========================================================
 
     def detect_ground(self, points):
+        """Canonical RANSAC ground mask (same estimator as the E2E pipeline)."""
 
-        cloud = o3d.geometry.PointCloud()
+        estimate = estimate_ground(
+            points,
+            distance_threshold=self.ground_distance_threshold,
+            num_iterations=self.ransac_iterations,
+        )
 
-        cloud.points = (
-            o3d.utility.Vector3dVector(
-                points
+        return estimate.mask
+
+    def groups_to_proposals(self, objects):
+        """Convert ObjectGroup list into tracker-ready ObjectProposal list."""
+
+        proposals = []
+
+        for obj in objects:
+            width, length, height = obj.dimensions
+            x, y = obj.center
+            confidence = self.compute_confidence(obj)
+
+            proposals.append(
+                ObjectProposal(
+                    proposal_id=int(obj.object_id),
+                    center=(float(x), float(y)),
+                    width=float(width),
+                    length=float(length),
+                    height=float(height),
+                    classification=str(obj.classification),
+                    confidence=float(confidence),
+                    distance=float(obj.distance),
+                    point_count=int(obj.point_count),
+                    cell_count=int(obj.cell_count),
+                    max_height=float(obj.maximum_height),
+                    mean_height=float(obj.mean_height),
+                    density=float(obj.density),
+                    component_count=int(len(obj.components)),
+                )
             )
+
+        return proposals
+
+    def detect_from_grid(self, grid):
+        """
+        Geometric detector given a built AdaptiveGrid.
+
+        obstacle cells → connected components → filter → merge → proposals
+        """
+
+        obstacle_cells = extract_obstacle_cells(
+            grid,
+            minimum_height=self.minimum_obstacle_height,
+            minimum_obstacle_points=self.minimum_obstacle_points,
         )
 
-        _, inliers = (
-            cloud.segment_plane(
-                distance_threshold=(
-                    self.ground_distance_threshold
-                ),
-                ransac_n=3,
-                num_iterations=(
-                    self.ransac_iterations
-                ),
-            )
+        raw_components = connected_components(obstacle_cells)
+
+        filtered_components = filter_components(
+            raw_components,
+            minimum_cells=self.minimum_component_cells,
+            minimum_points=self.minimum_component_points,
         )
 
-        ground_mask = np.zeros(
-            len(points),
-            dtype=bool,
-        )
+        object_groups = associate_components(filtered_components)
+        proposals = self.groups_to_proposals(object_groups)
 
-        ground_mask[inliers] = True
-
-        return ground_mask
+        return {
+            "obstacle_cells": obstacle_cells,
+            "raw_components": raw_components,
+            "filtered_components": filtered_components,
+            "object_groups": object_groups,
+            "proposals": proposals,
+        }
 
     # ========================================================
     # Range filtering
@@ -147,7 +192,7 @@ class OrbitPerception:
     # Main processing
     # ========================================================
 
-    def process(self, points):
+    def process(self, points, ground_mask=None):
 
         start_time = time.perf_counter()
 
@@ -189,11 +234,14 @@ class OrbitPerception:
         # Ground detection
         # ----------------------------------------------------
 
-        ground_mask = (
-            self.detect_ground(
-                mapped_points
-            )
-        )
+        if ground_mask is None:
+            ground_mask = self.detect_ground(mapped_points)
+        else:
+            ground_mask = np.asarray(ground_mask, dtype=bool)
+            if len(ground_mask) != mapped_count:
+                raise ValueError(
+                    "ground_mask length must match range-filtered points"
+                )
 
         ground_count = int(
             ground_mask.sum()
@@ -223,49 +271,13 @@ class OrbitPerception:
         # Obstacle cell extraction
         # ----------------------------------------------------
 
-        obstacle_cells = (
-            extract_obstacle_cells(
-                grid,
-                minimum_height=(
-                    self.minimum_obstacle_height
-                ),
-                minimum_obstacle_points=(
-                    self.minimum_obstacle_points
-                ),
-            )
-        )
+        detection = self.detect_from_grid(grid)
 
-        # ----------------------------------------------------
-        # Connected components
-        # ----------------------------------------------------
-
-        raw_components = (
-            connected_components(
-                obstacle_cells
-            )
-        )
-
-        filtered_components = (
-            filter_components(
-                raw_components,
-                minimum_cells=(
-                    self.minimum_component_cells
-                ),
-                minimum_points=(
-                    self.minimum_component_points
-                ),
-            )
-        )
-
-        # ----------------------------------------------------
-        # Object association
-        # ----------------------------------------------------
-
-        objects = (
-            associate_components(
-                filtered_components
-            )
-        )
+        obstacle_cells = detection["obstacle_cells"]
+        raw_components = detection["raw_components"]
+        filtered_components = detection["filtered_components"]
+        objects = detection["object_groups"]
+        proposals = detection["proposals"]
 
         # ----------------------------------------------------
         # Object records
@@ -471,6 +483,8 @@ class OrbitPerception:
             "obstacle_cells": obstacle_cells,
 
             "object_groups": objects,
+
+            "proposals": proposals,
         }
 
         return result
