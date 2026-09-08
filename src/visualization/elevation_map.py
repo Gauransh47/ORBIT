@@ -5,23 +5,46 @@ import numpy as np
 import matplotlib.pyplot as plt
 import open3d as o3d
 
+
+# ============================================================
 # Allow imports from src
-sys.path.append(
-    str(Path(__file__).resolve().parents[1])
-)
+# ============================================================
+
+SRC_DIR = Path(__file__).resolve().parents[1]
+
+if str(SRC_DIR) not in sys.path:
+    sys.path.append(str(SRC_DIR))
+
 
 from mapping.adaptive_grid import AdaptiveGrid
 
 
+# ============================================================
+# Build ground elevation map
+# ============================================================
+
 def build_ground_map(grid):
     """
-    Convert adaptive ground cells into a
-    top-down visualization representation.
+    Extract ground elevation information from occupied
+    adaptive grid cells.
+
+    Returns:
+        List of:
+        (
+            x,
+            y,
+            ground_elevation,
+            resolution,
+            semantic_class
+        )
     """
 
     cells = []
 
     for cell in grid.cells.values():
+
+        if cell.ground_count <= 0:
+            continue
 
         if cell.ground_elevation is None:
             continue
@@ -30,10 +53,10 @@ def build_ground_map(grid):
 
         cells.append(
             (
-                x,
-                y,
-                cell.ground_elevation,
-                cell.resolution,
+                float(x),
+                float(y),
+                float(cell.ground_elevation),
+                float(cell.resolution),
                 cell.semantic_class
             )
         )
@@ -41,31 +64,90 @@ def build_ground_map(grid):
     return cells
 
 
+# ============================================================
+# Build obstacle elevation map
+# ============================================================
+
 def build_obstacle_map(grid):
     """
-    Extract obstacle information from adaptive cells.
+    Extract obstacle elevation information from occupied
+    adaptive grid cells.
+
+    Returns:
+        List of:
+        (
+            x,
+            y,
+            obstacle_elevation,
+            resolution
+        )
     """
 
     cells = []
 
     for cell in grid.cells.values():
 
-        if cell.obstacle_count == 0:
+        if cell.obstacle_count <= 0:
+            continue
+
+        if cell.obstacle_elevation is None:
             continue
 
         x, y = cell.center
 
         cells.append(
             (
-                x,
-                y,
-                cell.obstacle_elevation,
-                cell.resolution
+                float(x),
+                float(y),
+                float(cell.obstacle_elevation),
+                float(cell.resolution)
             )
         )
 
     return cells
 
+
+# ============================================================
+# Ground detection
+# ============================================================
+
+def detect_ground(cloud, num_points):
+    """
+    Detect the dominant ground plane using RANSAC.
+
+    Returns:
+        Boolean mask where True indicates ground points.
+    """
+
+    print("\nDetecting ground...")
+
+    plane_model, inliers = cloud.segment_plane(
+        distance_threshold=0.08,
+        ransac_n=3,
+        num_iterations=1000
+    )
+
+    ground_mask = np.zeros(
+        num_points,
+        dtype=bool
+    )
+
+    ground_mask[inliers] = True
+
+    print(
+        f"Ground points: {ground_mask.sum():,}"
+    )
+
+    print(
+        f"Non-ground points: {(~ground_mask).sum():,}"
+    )
+
+    return ground_mask
+
+
+# ============================================================
+# Main
+# ============================================================
 
 def main():
 
@@ -77,6 +159,8 @@ def main():
     # Load LiDAR
     # ========================================================
 
+    print("\nLoading ORBIT point cloud...")
+
     cloud = o3d.io.read_point_cloud(
         "data/synthetic_scene.ply"
     )
@@ -85,42 +169,58 @@ def main():
         cloud.points
     )
 
+    if len(points) == 0:
+
+        raise RuntimeError(
+            "No points were loaded from "
+            "data/synthetic_scene.ply"
+        )
+
     print(
-        f"\nInput points: {len(points):,}"
+        f"Input points: {len(points):,}"
     )
 
     # ========================================================
     # Ground detection
     # ========================================================
 
-    plane_model, inliers = (
-        cloud.segment_plane(
-            distance_threshold=0.08,
-            ransac_n=3,
-            num_iterations=1000
-        )
+    ground_mask = detect_ground(
+        cloud,
+        len(points)
     )
-
-    ground_mask = np.zeros(
-        len(points),
-        dtype=bool
-    )
-
-    ground_mask[inliers] = True
 
     # ========================================================
     # Build adaptive grid
     # ========================================================
 
+    print("\nBuilding adaptive grid...")
+
     grid = AdaptiveGrid()
 
-    mapped_points = grid.build(
+    build_result = grid.build(
         points,
         ground_mask
     )
 
+    # --------------------------------------------------------
+    # AdaptiveGrid.build() may return mapped points rather
+    # than a count. We determine the count safely.
+    # --------------------------------------------------------
+
+    if build_result is None:
+
+        mapped_count = len(points)
+
+    elif isinstance(build_result, (int, np.integer)):
+
+        mapped_count = int(build_result)
+
+    else:
+
+        mapped_count = len(build_result)
+
     print(
-        f"Mapped points: {mapped_points:,}"
+        f"Mapped points: {mapped_count:,}"
     )
 
     print(
@@ -128,8 +228,10 @@ def main():
     )
 
     # ========================================================
-    # Extract maps
+    # Extract 2.5D maps
     # ========================================================
+
+    print("\nExtracting elevation layers...")
 
     ground_cells = build_ground_map(
         grid
@@ -140,13 +242,11 @@ def main():
     )
 
     print(
-        f"Ground map cells: "
-        f"{len(ground_cells):,}"
+        f"Ground map cells: {len(ground_cells):,}"
     )
 
     print(
-        f"Obstacle map cells: "
-        f"{len(obstacle_cells):,}"
+        f"Obstacle map cells: {len(obstacle_cells):,}"
     )
 
     # ========================================================
@@ -155,102 +255,215 @@ def main():
 
     if ground_cells:
 
-        ground = np.array(
+        print(
+            "\nRendering ground elevation map..."
+        )
+
+        ground = np.asarray(
             [
-                [c[0], c[1], c[2]]
-                for c in ground_cells
-            ]
+                [
+                    cell[0],
+                    cell[1],
+                    cell[2]
+                ]
+                for cell in ground_cells
+            ],
+            dtype=float
         )
 
-        plt.figure(
-            figsize=(12, 10)
+        resolutions = np.asarray(
+            [
+                cell[3]
+                for cell in ground_cells
+            ],
+            dtype=float
         )
 
-        scatter = plt.scatter(
+        # Larger adaptive cells should appear visually larger
+        marker_sizes = np.clip(
+            (resolutions / resolutions.min()) * 4,
+            2,
+            30
+        )
+
+        fig, ax = plt.subplots(
+            figsize=(13, 10)
+        )
+
+        scatter = ax.scatter(
             ground[:, 0],
             ground[:, 1],
             c=ground[:, 2],
-            s=4
+            s=marker_sizes
         )
 
-        plt.scatter(
+        ax.scatter(
             0,
             0,
             marker="x",
-            s=100,
+            s=150,
+            linewidths=3,
             label="LiDAR"
         )
 
-        plt.colorbar(
+        colorbar = fig.colorbar(
             scatter,
-            label="Ground elevation (m)"
+            ax=ax
         )
 
-        plt.xlabel("X (m)")
-        plt.ylabel("Y (m)")
-
-        plt.title(
-            "ORBIT - Adaptive Ground Elevation Map"
+        colorbar.set_label(
+            "Ground Elevation (m)"
         )
 
-        plt.axis("equal")
-        plt.legend()
+        ax.set_xlabel("X (m)")
+        ax.set_ylabel("Y (m)")
+
+        ax.set_title(
+            "ORBIT - Adaptive 2.5D Ground Elevation Map"
+        )
+
+        ax.set_aspect(
+            "equal",
+            adjustable="box"
+        )
+
+        ax.grid(
+            alpha=0.2
+        )
+
+        ax.legend()
 
         plt.tight_layout()
 
         plt.show()
 
+    else:
+
+        print(
+            "\nWARNING: No ground cells found."
+        )
+
     # ========================================================
-    # Obstacle visualization
+    # Obstacle elevation visualization
     # ========================================================
 
     if obstacle_cells:
 
-        obstacles = np.array(
+        print(
+            "\nRendering obstacle elevation map..."
+        )
+
+        obstacles = np.asarray(
             [
-                [c[0], c[1], c[2]]
-                for c in obstacle_cells
-            ]
+                [
+                    cell[0],
+                    cell[1],
+                    cell[2]
+                ]
+                for cell in obstacle_cells
+            ],
+            dtype=float
         )
 
-        plt.figure(
-            figsize=(12, 10)
+        resolutions = np.asarray(
+            [
+                cell[3]
+                for cell in obstacle_cells
+            ],
+            dtype=float
         )
 
-        scatter = plt.scatter(
+        marker_sizes = np.clip(
+            (resolutions / resolutions.min()) * 5,
+            2,
+            35
+        )
+
+        fig, ax = plt.subplots(
+            figsize=(13, 10)
+        )
+
+        scatter = ax.scatter(
             obstacles[:, 0],
             obstacles[:, 1],
             c=obstacles[:, 2],
-            s=5
+            s=marker_sizes
         )
 
-        plt.scatter(
+        ax.scatter(
             0,
             0,
             marker="x",
-            s=100,
+            s=150,
+            linewidths=3,
             label="LiDAR"
         )
 
-        plt.colorbar(
+        colorbar = fig.colorbar(
             scatter,
-            label="Obstacle elevation (m)"
+            ax=ax
         )
 
-        plt.xlabel("X (m)")
-        plt.ylabel("Y (m)")
-
-        plt.title(
-            "ORBIT - Adaptive Obstacle Elevation Map"
+        colorbar.set_label(
+            "Obstacle Elevation (m)"
         )
 
-        plt.axis("equal")
-        plt.legend()
+        ax.set_xlabel("X (m)")
+        ax.set_ylabel("Y (m)")
+
+        ax.set_title(
+            "ORBIT - Adaptive 2.5D Obstacle Elevation Map"
+        )
+
+        ax.set_aspect(
+            "equal",
+            adjustable="box"
+        )
+
+        ax.grid(
+            alpha=0.2
+        )
+
+        ax.legend()
 
         plt.tight_layout()
 
         plt.show()
 
+    else:
+
+        print(
+            "\nWARNING: No obstacle cells found."
+        )
+
+    # ========================================================
+    # Final summary
+    # ========================================================
+
+    print("\n" + "=" * 65)
+    print("ORBIT 2.5D ELEVATION MAP COMPLETE")
+    print("=" * 65)
+
+    print(
+        f"Input points:        {len(points):,}"
+    )
+
+    print(
+        f"Adaptive cells:      {len(grid.cells):,}"
+    )
+
+    print(
+        f"Ground elevation:    {len(ground_cells):,} cells"
+    )
+
+    print(
+        f"Obstacle elevation:  {len(obstacle_cells):,} cells"
+    )
+
+
+# ============================================================
+# Entry point
+# ============================================================
 
 if __name__ == "__main__":
     main()

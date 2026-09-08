@@ -1,24 +1,93 @@
+import sys
+from pathlib import Path
+from collections import deque
+from dataclasses import dataclass, field
+
 import numpy as np
 import open3d as o3d
 
-from dataclasses import dataclass
-from sklearn.cluster import DBSCAN
+
+# ============================================================
+# Make src/ importable
+# ============================================================
+
+SRC_DIR = Path(__file__).resolve().parents[1]
+
+if str(SRC_DIR) not in sys.path:
+    sys.path.insert(0, str(SRC_DIR))
+
+
+from mapping.adaptive_grid import AdaptiveGrid
+from perception.terrain_obstacle_detection import (
+    extract_obstacle_cells,
+)
 
 
 # ============================================================
-# ORBIT - DISTANCE AWARE OBJECT DETECTION
+# ORBIT - TERRAIN RELATIVE OBJECT DETECTION
 # ============================================================
 
 
-# ------------------------------------------------------------
+# ============================================================
+# SemanticKITTI frame loader
+# ============================================================
+
+def load_semantic_kitti_frame(file_path):
+    """
+    Load one SemanticKITTI Velodyne frame.
+
+    Returns only XYZ coordinates.
+
+    The original point ordering is preserved, so an index in
+    the returned array corresponds directly to the matching
+    index in the SemanticKITTI label file.
+    """
+
+    path = Path(file_path)
+
+    if not path.exists():
+        raise FileNotFoundError(
+            f"LiDAR frame not found:\n{path}"
+        )
+
+    raw = np.fromfile(
+        path,
+        dtype=np.float32,
+    )
+
+    if raw.size % 4 != 0:
+        raise ValueError(
+            f"Invalid SemanticKITTI frame size: "
+            f"{raw.size} float values is not divisible by 4."
+        )
+
+    scan = raw.reshape(
+        -1,
+        4,
+    )
+
+    return scan[:, :3].astype(
+        np.float64,
+        copy=False,
+    )
+
+
+# ============================================================
 # Object proposal
-# ------------------------------------------------------------
+# ============================================================
 
 @dataclass
 class ObjectProposal:
+    """
+    Final ORBIT object proposal.
 
-    cluster_id: int
-    points: np.ndarray
+    point_indices refer to indices in the original input
+    point cloud passed to ObjectDetector.detect().
+    """
+
+    object_id: int
+
+    cells: list
 
     classification: str
 
@@ -28,51 +97,205 @@ class ObjectProposal:
 
     distance: float
 
+    point_count: int
+
+    cell_count: int
+
+    max_height: float
+
+    mean_height: float
+
+    footprint_area: float
+
+    aspect_ratio: float
+
     verticality: float
 
     density: float
+
+    point_indices: np.ndarray = field(
+        default_factory=lambda: np.empty(
+            0,
+            dtype=np.int64,
+        )
+    )
+
+    points: np.ndarray = field(
+        default_factory=lambda: np.empty(
+            (0, 3),
+            dtype=np.float64,
+        )
+    )
+
+    @property
+    def cluster_id(self):
+        return self.object_id
+
+
+# ============================================================
+# Object component
+# ============================================================
+
+class ObjectComponent:
+    """
+    Connected group of adaptive obstacle cells.
+    """
+
+    def __init__(self, component_id=0):
+        self.component_id = component_id
+        self.cells = []
+        self._bounds_cache = None
+        self._mean_height_cache = None
+
+    def add(self, cell):
+        if cell not in self.cells:
+            self.cells.append(cell)
+            self._bounds_cache = None
+            self._mean_height_cache = None
+
+    @property
+    def bounds(self):
+        if self._bounds_cache is not None:
+            return self._bounds_cache
+
+        if not self.cells:
+            return None
+
+        min_x = min(
+            cell.center[0]
+            - cell.resolution / 2.0
+            for cell in self.cells
+        )
+
+        max_x = max(
+            cell.center[0]
+            + cell.resolution / 2.0
+            for cell in self.cells
+        )
+
+        min_y = min(
+            cell.center[1]
+            - cell.resolution / 2.0
+            for cell in self.cells
+        )
+
+        max_y = max(
+            cell.center[1]
+            + cell.resolution / 2.0
+            for cell in self.cells
+        )
+
+        min_z = min(
+            cell.ground_elevation
+            for cell in self.cells
+        )
+
+        max_z = max(
+            cell.obstacle_elevation
+            for cell in self.cells
+        )
+
+        self._bounds_cache = (
+            min_x,
+            max_x,
+            min_y,
+            max_y,
+            min_z,
+            max_z,
+        )
+
+        return self._bounds_cache
+
+    @property
+    def center(self):
+        bounds = self.bounds
+
+        if bounds is None:
+            return 0.0, 0.0
+
+        min_x, max_x, min_y, max_y, _, _ = bounds
+
+        return (
+            (min_x + max_x) / 2.0,
+            (min_y + max_y) / 2.0,
+        )
+
+    @property
+    def distance(self):
+        x, y = self.center
+
+        return float(
+            np.hypot(
+                x,
+                y,
+            )
+        )
+
+    @property
+    def mean_height(self):
+        if self._mean_height_cache is not None:
+            return self._mean_height_cache
+
+        if not self.cells:
+            return 0.0
+
+        self._mean_height_cache = float(
+            sum(
+                cell.obstacle_height
+                for cell in self.cells
+            )
+            / len(self.cells)
+        )
+
+        return self._mean_height_cache
 
 
 # ============================================================
 # Ground detection
 # ============================================================
 
-def detect_ground(points, distance_threshold=0.08):
-
+def detect_ground(
+    points,
+    distance_threshold=0.08,
+    seed=42,
+):
     """
-    Detect the dominant ground plane.
+    Detect dominant ground plane using RANSAC.
 
-    Returns
-    -------
-    ground_mask : np.ndarray
-        Boolean mask where True = ground.
+    The fixed Open3D seed makes repeated runs substantially
+    more reproducible.
     """
 
-    points = np.asarray(points)
+    points = np.asarray(
+        points,
+        dtype=np.float64,
+    )
 
     if len(points) < 3:
         return np.zeros(
             len(points),
-            dtype=bool
+            dtype=bool,
         )
+
+    o3d.utility.random.seed(seed)
 
     cloud = o3d.geometry.PointCloud()
 
     cloud.points = (
-        o3d.utility.Vector3dVector(points)
+        o3d.utility.Vector3dVector(
+            points
+        )
     )
 
-    plane_model, inliers = (
-        cloud.segment_plane(
-            distance_threshold=distance_threshold,
-            ransac_n=3,
-            num_iterations=1000
-        )
+    _, inliers = cloud.segment_plane(
+        distance_threshold=distance_threshold,
+        ransac_n=3,
+        num_iterations=1000,
     )
 
     ground_mask = np.zeros(
         len(points),
-        dtype=bool
+        dtype=bool,
     )
 
     ground_mask[inliers] = True
@@ -81,542 +304,1487 @@ def detect_ground(points, distance_threshold=0.08):
 
 
 # ============================================================
-# Distance-aware detector
+# Cell geometry
+# ============================================================
+
+def cell_bounds(cell):
+    """
+    Horizontal XY bounds of one adaptive cell.
+    """
+
+    x, y = cell.center
+
+    half = cell.resolution / 2.0
+
+    return (
+        x - half,
+        x + half,
+        y - half,
+        y + half,
+    )
+
+
+def cells_touch(cell_a, cell_b):
+    """
+    Resolution-aware XY adjacency.
+    """
+
+    ax0, ax1, ay0, ay1 = cell_bounds(
+        cell_a
+    )
+
+    bx0, bx1, by0, by1 = cell_bounds(
+        cell_b
+    )
+
+    tolerance = (
+        max(
+            cell_a.resolution,
+            cell_b.resolution,
+        )
+        * 0.05
+    )
+
+    x_connected = (
+        ax0 <= bx1 + tolerance
+        and ax1 >= bx0 - tolerance
+    )
+
+    y_connected = (
+        ay0 <= by1 + tolerance
+        and ay1 >= by0 - tolerance
+    )
+
+    return (
+        x_connected
+        and y_connected
+    )
+
+
+# ============================================================
+# Adaptive-level helper
+# ============================================================
+
+def max_grid_resolution():
+    """
+    Safely obtain the largest AdaptiveGrid resolution whether
+    LEVELS is a dict, list, tuple, or ndarray.
+    """
+
+    levels = AdaptiveGrid.LEVELS
+
+    if isinstance(
+        levels,
+        dict,
+    ):
+        return float(
+            max(levels.values())
+        )
+
+    return float(
+        np.max(
+            np.asarray(
+                levels,
+                dtype=float,
+            )
+        )
+    )
+
+
+# ============================================================
+# Spatial hashing
+# ============================================================
+
+def build_spatial_hash(cells):
+    """
+    Build a coarse spatial hash for efficient neighborhood
+    queries.
+    """
+
+    bucket_size = max_grid_resolution()
+
+    spatial_hash = {}
+
+    for index, cell in enumerate(cells):
+
+        x, y = cell.center
+
+        bx = int(
+            np.floor(
+                x / bucket_size
+            )
+        )
+
+        by = int(
+            np.floor(
+                y / bucket_size
+            )
+        )
+
+        key = (
+            bx,
+            by,
+        )
+
+        spatial_hash.setdefault(
+            key,
+            []
+        ).append(index)
+
+    return (
+        spatial_hash,
+        bucket_size,
+    )
+
+
+def candidate_neighbors(
+    cell_index,
+    cells,
+    spatial_hash,
+    bucket_size,
+):
+    """
+    Return neighboring cell candidates.
+    """
+
+    cell = cells[cell_index]
+
+    x, y = cell.center
+
+    bx = int(
+        np.floor(
+            x / bucket_size
+        )
+    )
+
+    by = int(
+        np.floor(
+            y / bucket_size
+        )
+    )
+
+    candidates = []
+
+    for dx in (
+        -1,
+        0,
+        1,
+    ):
+
+        for dy in (
+            -1,
+            0,
+            1,
+        ):
+
+            key = (
+                bx + dx,
+                by + dy,
+            )
+
+            candidates.extend(
+                spatial_hash.get(
+                    key,
+                    []
+                )
+            )
+
+    return candidates
+
+
+# ============================================================
+# Connected components
+# ============================================================
+
+def connected_components(
+    obstacle_cells,
+):
+    """
+    Resolution-aware connected-component extraction.
+    """
+
+    if not obstacle_cells:
+        return []
+
+    spatial_hash, bucket_size = (
+        build_spatial_hash(
+            obstacle_cells
+        )
+    )
+
+    visited = np.zeros(
+        len(obstacle_cells),
+        dtype=bool,
+    )
+
+    components = []
+
+    for start_index in range(
+        len(obstacle_cells)
+    ):
+
+        if visited[start_index]:
+            continue
+
+        component = ObjectComponent(
+            len(components) + 1
+        )
+
+        queue = deque(
+            [start_index]
+        )
+
+        visited[start_index] = True
+
+        while queue:
+
+            current_index = (
+                queue.popleft()
+            )
+
+            current_cell = (
+                obstacle_cells[
+                    current_index
+                ]
+            )
+
+            component.add(
+                current_cell
+            )
+
+            candidates = candidate_neighbors(
+                current_index,
+                obstacle_cells,
+                spatial_hash,
+                bucket_size,
+            )
+
+            for neighbor_index in candidates:
+
+                if visited[neighbor_index]:
+                    continue
+
+                neighbor_cell = (
+                    obstacle_cells[
+                        neighbor_index
+                    ]
+                )
+
+                # ------------------------------------------------
+                # Horizontal adjacency
+                # ------------------------------------------------
+
+                if not cells_touch(
+                    current_cell,
+                    neighbor_cell,
+                ):
+                    continue
+
+                # ------------------------------------------------
+                # Vertical compatibility
+                # ------------------------------------------------
+
+                height_difference = abs(
+                    current_cell.obstacle_height
+                    - neighbor_cell.obstacle_height
+                )
+
+                allowed_difference = max(
+                    0.75,
+                    2.0
+                    * max(
+                        current_cell.resolution,
+                        neighbor_cell.resolution,
+                    ),
+                )
+
+                if (
+                    height_difference
+                    > allowed_difference
+                ):
+                    continue
+
+                visited[neighbor_index] = True
+
+                queue.append(
+                    neighbor_index
+                )
+
+        components.append(
+            component
+        )
+
+    return components
+
+
+# ============================================================
+# Component filtering
+# ============================================================
+
+def filter_components(
+    components,
+    minimum_cells=3,
+    minimum_points=5,
+):
+    """
+    Remove very small components.
+    """
+
+    filtered = []
+
+    for component in components:
+
+        cell_count = len(
+            component.cells
+        )
+
+        point_count = sum(
+            cell.obstacle_count
+            for cell in component.cells
+        )
+
+        if cell_count < minimum_cells:
+            continue
+
+        if point_count < minimum_points:
+            continue
+
+        filtered.append(
+            component
+        )
+
+    return filtered
+
+
+# ============================================================
+# Component merging
+# ============================================================
+
+def component_horizontal_gap(
+    component_a,
+    component_b,
+):
+    """
+    Minimum XY bounding-box gap between two components.
+    """
+
+    bounds_a = component_a.bounds
+    bounds_b = component_b.bounds
+
+    if (
+        bounds_a is None
+        or bounds_b is None
+    ):
+        return float("inf")
+
+    ax0, ax1, ay0, ay1, _, _ = (
+        bounds_a
+    )
+
+    bx0, bx1, by0, by1, _, _ = (
+        bounds_b
+    )
+
+    if ax1 < bx0:
+        gap_x = bx0 - ax1
+
+    elif bx1 < ax0:
+        gap_x = ax0 - bx1
+
+    else:
+        gap_x = 0.0
+
+    if ay1 < by0:
+        gap_y = by0 - ay1
+
+    elif by1 < ay0:
+        gap_y = ay0 - by1
+
+    else:
+        gap_y = 0.0
+
+    return float(
+        np.hypot(
+            gap_x,
+            gap_y,
+        )
+    )
+
+
+def component_height_difference(
+    component_a,
+    component_b,
+):
+    return abs(
+        component_a.mean_height
+        - component_b.mean_height
+    )
+
+
+def merged_dimensions(
+    component_a,
+    component_b,
+):
+    """
+    Dimensions of the combined bounding box.
+    """
+
+    bounds_a = component_a.bounds
+    bounds_b = component_b.bounds
+
+    min_x = min(
+        bounds_a[0],
+        bounds_b[0],
+    )
+
+    max_x = max(
+        bounds_a[1],
+        bounds_b[1],
+    )
+
+    min_y = min(
+        bounds_a[2],
+        bounds_b[2],
+    )
+
+    max_y = max(
+        bounds_a[3],
+        bounds_b[3],
+    )
+
+    min_z = min(
+        bounds_a[4],
+        bounds_b[4],
+    )
+
+    max_z = max(
+        bounds_a[5],
+        bounds_b[5],
+    )
+
+    return (
+        max_x - min_x,
+        max_y - min_y,
+        max_z - min_z,
+    )
+
+
+def should_merge_components(
+    component_a,
+    component_b,
+):
+    """
+    Experimental object reconstruction merge.
+
+    More tolerant than terrain-level merging because a physical
+    object may appear as disconnected obstacle components in a
+    sparse LiDAR scan.
+    """
+
+    gap = component_horizontal_gap(
+        component_a,
+        component_b,
+    )
+
+    distance = min(
+        component_a.distance,
+        component_b.distance,
+    )
+
+    # --------------------------------------------------------
+    # More tolerant distance-aware gap
+    # --------------------------------------------------------
+
+    if distance < 15.0:
+        max_gap = 0.50
+
+    elif distance < 30.0:
+        max_gap = 0.60
+
+    elif distance < 60.0:
+        max_gap = 0.90
+
+    else:
+        max_gap = 1.25
+
+    if gap > max_gap:
+        return False
+
+    # --------------------------------------------------------
+    # Relaxed height compatibility
+    # --------------------------------------------------------
+
+    height_difference = (
+        component_height_difference(
+            component_a,
+            component_b,
+        )
+    )
+
+    if height_difference > 0.75:
+        return False
+
+    # --------------------------------------------------------
+    # Combined object dimensions
+    # --------------------------------------------------------
+
+    dx, dy, dz = merged_dimensions(
+        component_a,
+        component_b,
+    )
+
+    horizontal_max = max(
+        dx,
+        dy,
+    )
+
+    horizontal_min = min(
+        dx,
+        dy,
+    )
+
+    # Avoid absurdly large merged structures.
+    if horizontal_max > 8.0:
+        return False
+
+    # Prevent very long thin structures from chain-merging.
+    if (
+        horizontal_min < 0.10
+        and horizontal_max > 6.0
+    ):
+        return False
+
+    if dz > 4.5:
+        return False
+
+    return True
+
+
+def merge_two_components(
+    component_a,
+    component_b,
+    component_id,
+):
+    """
+    Merge two ObjectComponents.
+    """
+
+    merged = ObjectComponent(
+        component_id
+    )
+
+    for cell in component_a.cells:
+        merged.add(cell)
+
+    for cell in component_b.cells:
+        merged.add(cell)
+
+    return merged
+
+
+def merge_components(
+    components,
+):
+    """
+    Closest-first conservative component merging.
+
+    Recomputes valid candidates after every merge to prevent
+    uncontrolled chain merging.
+    """
+
+    components = list(
+        components
+    )
+
+    if len(components) <= 1:
+        return components
+
+    while True:
+
+        best_pair = None
+
+        best_gap = float(
+            "inf"
+        )
+
+        # ----------------------------------------------------
+        # Find closest valid pair
+        # ----------------------------------------------------
+
+        for i in range(
+            len(components)
+        ):
+
+            for j in range(
+                i + 1,
+                len(components)
+            ):
+
+                component_a = (
+                    components[i]
+                )
+
+                component_b = (
+                    components[j]
+                )
+
+                if not should_merge_components(
+                    component_a,
+                    component_b,
+                ):
+                    continue
+
+                gap = component_horizontal_gap(
+                    component_a,
+                    component_b,
+                )
+
+                if gap < best_gap:
+
+                    best_gap = gap
+
+                    best_pair = (
+                        i,
+                        j,
+                    )
+
+        # ----------------------------------------------------
+        # Stop if no merge exists
+        # ----------------------------------------------------
+
+        if best_pair is None:
+            break
+
+        i, j = best_pair
+
+        merged = merge_two_components(
+            components[i],
+            components[j],
+            components[i].component_id,
+        )
+
+        # Remove larger index first.
+        components.pop(j)
+        components.pop(i)
+
+        components.append(
+            merged
+        )
+
+    # --------------------------------------------------------
+    # Sort spatially / by distance
+    # --------------------------------------------------------
+
+    components.sort(
+        key=lambda component:
+            component.distance
+    )
+
+    # --------------------------------------------------------
+    # Renumber
+    # --------------------------------------------------------
+
+    for index, component in enumerate(
+        components,
+        start=1,
+    ):
+
+        component.component_id = index
+
+    return components
+
+
+# ============================================================
+# Geometry / feature extraction
+# ============================================================
+
+def component_features(
+    cells,
+):
+    """
+    Calculate geometric features for a component.
+    """
+
+    min_x = min(
+        cell.center[0]
+        - cell.resolution / 2.0
+        for cell in cells
+    )
+
+    max_x = max(
+        cell.center[0]
+        + cell.resolution / 2.0
+        for cell in cells
+    )
+
+    min_y = min(
+        cell.center[1]
+        - cell.resolution / 2.0
+        for cell in cells
+    )
+
+    max_y = max(
+        cell.center[1]
+        + cell.resolution / 2.0
+        for cell in cells
+    )
+
+    min_z = min(
+        cell.ground_elevation
+        for cell in cells
+    )
+
+    max_z = max(
+        cell.obstacle_elevation
+        for cell in cells
+    )
+
+    width = max_x - min_x
+    length = max_y - min_y
+    height = max_z - min_z
+
+    center_x = (
+        min_x + max_x
+    ) / 2.0
+
+    center_y = (
+        min_y + max_y
+    ) / 2.0
+
+    center_z = (
+        min_z + max_z
+    ) / 2.0
+
+    distance = float(
+        np.hypot(
+            center_x,
+            center_y,
+        )
+    )
+
+    obstacle_heights = np.asarray(
+        [
+            cell.obstacle_height
+            for cell in cells
+        ],
+        dtype=float,
+    )
+
+    max_height = float(
+        np.max(
+            obstacle_heights
+        )
+    )
+
+    mean_height = float(
+        np.mean(
+            obstacle_heights
+        )
+    )
+
+    point_count = int(
+        sum(
+            cell.obstacle_count
+            for cell in cells
+        )
+    )
+
+    cell_count = len(cells)
+
+    horizontal_max = max(
+        width,
+        length,
+    )
+
+    horizontal_min = max(
+        min(
+            width,
+            length,
+        ),
+        0.05,
+    )
+
+    footprint_area = max(
+        width * length,
+        0.01,
+    )
+
+    aspect_ratio = (
+        horizontal_max
+        / horizontal_min
+    )
+
+    verticality = (
+        max_height
+        / horizontal_min
+    )
+
+    density = (
+        point_count
+        / footprint_area
+    )
+
+    return {
+        "center": (
+            float(center_x),
+            float(center_y),
+            float(center_z),
+        ),
+        "dimensions": (
+            float(width),
+            float(length),
+            float(height),
+        ),
+        "distance": distance,
+        "point_count": point_count,
+        "cell_count": cell_count,
+        "max_height": max_height,
+        "mean_height": mean_height,
+        "footprint_area": float(
+            footprint_area
+        ),
+        "aspect_ratio": float(
+            aspect_ratio
+        ),
+        "verticality": float(
+            verticality
+        ),
+        "density": float(
+            density
+        ),
+    }
+
+
+# ============================================================
+# Classification
+# ============================================================
+
+def classify_object(
+    features,
+):
+    """
+    Conservative geometric classification baseline.
+    """
+
+    width, length, height = (
+        features["dimensions"]
+    )
+
+    max_height = features[
+        "max_height"
+    ]
+
+    point_count = features[
+        "point_count"
+    ]
+
+    footprint_area = features[
+        "footprint_area"
+    ]
+
+    aspect_ratio = features[
+        "aspect_ratio"
+    ]
+
+    horizontal_max = max(
+        width,
+        length,
+    )
+
+    horizontal_min = min(
+        width,
+        length,
+    )
+
+    # --------------------------------------------------------
+    # POLE
+    # --------------------------------------------------------
+
+    if (
+        max_height >= 1.2
+        and horizontal_max <= 1.2
+        and horizontal_min <= 1.0
+        and features["verticality"] >= 2.0
+        and point_count >= 10
+    ):
+        return "POLE"
+
+    # --------------------------------------------------------
+    # WALL
+    # --------------------------------------------------------
+
+    if (
+        max_height >= 1.0
+        and horizontal_max >= 4.0
+        and horizontal_min <= 2.5
+        and aspect_ratio >= 2.0
+    ):
+        return "WALL"
+
+    # --------------------------------------------------------
+    # VEHICLE-LIKE
+    # --------------------------------------------------------
+
+    if (
+        1.5 <= horizontal_max <= 8.0
+        and 0.8 <= horizontal_min <= 3.5
+        and 0.7 <= max_height <= 3.2
+        and footprint_area >= 1.2
+        and point_count >= 50
+    ):
+        return "VEHICLE-LIKE"
+
+    # --------------------------------------------------------
+    # PERSON-LIKE
+    # --------------------------------------------------------
+
+    if (
+        1.2 <= max_height <= 2.3
+        and horizontal_max <= 1.2
+        and horizontal_min <= 1.0
+        and point_count >= 15
+    ):
+        return "PERSON-LIKE"
+
+    # --------------------------------------------------------
+    # Generic obstacle
+    # --------------------------------------------------------
+
+    return "OBSTACLE"
+
+
+# ============================================================
+# Create proposals
+# ============================================================
+
+def create_object_proposals(
+    components,
+):
+    """
+    Convert components into ObjectProposal instances.
+    """
+
+    proposals = []
+
+    for component in components:
+
+        features = component_features(
+            component.cells
+        )
+
+        proposal = ObjectProposal(
+            object_id=0,
+            cells=component.cells,
+            classification=classify_object(
+                features
+            ),
+            center=features["center"],
+            dimensions=features["dimensions"],
+            distance=features["distance"],
+            point_count=features["point_count"],
+            cell_count=features["cell_count"],
+            max_height=features["max_height"],
+            mean_height=features["mean_height"],
+            footprint_area=features["footprint_area"],
+            aspect_ratio=features["aspect_ratio"],
+            verticality=features["verticality"],
+            density=features["density"],
+        )
+
+        proposals.append(
+            proposal
+        )
+
+    proposals.sort(
+        key=lambda proposal:
+            proposal.distance
+    )
+
+    for index, proposal in enumerate(
+        proposals,
+        start=1,
+    ):
+
+        proposal.object_id = index
+
+    return proposals
+
+
+# ============================================================
+# Exact point-index recovery
+# ============================================================
+
+def recover_component_point_indices(
+    points,
+    component,
+):
+    """
+    Recover exact original point indices belonging to a
+    component using its adaptive-cell footprints.
+
+    This works on the exact unchanged point array and therefore
+    provides stable indices for SemanticKITTI label lookup.
+    """
+
+    points = np.asarray(
+        points,
+        dtype=np.float64,
+    )
+
+    if len(points) == 0:
+        return np.empty(
+            0,
+            dtype=np.int64,
+        )
+
+    x = points[:, 0]
+    y = points[:, 1]
+
+    component_mask = np.zeros(
+        len(points),
+        dtype=bool,
+    )
+
+    # --------------------------------------------------------
+    # Evaluate each component cell.
+    #
+    # Number of obstacle cells is small, so this is both simple
+    # and reliable. The expensive raw-point-to-cell operation
+    # can be optimized later.
+    # --------------------------------------------------------
+
+    for cell in component.cells:
+
+        cx, cy = cell.center
+
+        half = cell.resolution / 2.0
+
+        cell_mask = (
+            (x >= cx - half)
+            & (x <= cx + half)
+            & (y >= cy - half)
+            & (y <= cy + half)
+        )
+
+        component_mask |= cell_mask
+
+    return np.flatnonzero(
+        component_mask
+    ).astype(
+        np.int64,
+        copy=False,
+    )
+
+
+# ============================================================
+# Attach exact points and indices to proposals
+# ============================================================
+
+def attach_point_indices(
+    proposals,
+    components,
+    points,
+):
+    """
+    Attach exact original point indices and points to each
+    proposal.
+    """
+
+    for proposal, component in zip(
+        proposals,
+        components,
+    ):
+
+        indices = (
+            recover_component_point_indices(
+                points,
+                component,
+            )
+        )
+
+        proposal.point_indices = (
+            indices
+        )
+
+        proposal.points = (
+            points[indices]
+            if len(indices)
+            else np.empty(
+                (0, 3),
+                dtype=np.float64,
+            )
+        )
+
+    return proposals
+
+
+# ============================================================
+# Object detector
 # ============================================================
 
 class ObjectDetector:
-
     """
-    ORBIT distance-aware geometric object detector.
+    ORBIT terrain-relative adaptive object detector.
 
-    Clustering resolution follows ORBIT's adaptive
-    spatial hierarchy:
+    Pipeline:
 
-        0-10m     -> 5cm
-        10-25m    -> 10cm
-        25-50m    -> 25cm
-        50-100m   -> 50cm
+        LiDAR
+          ↓
+        100m range filter
+          ↓
+        Ground detection
+          ↓
+        Adaptive 2.5D grid
+          ↓
+        Terrain-relative obstacle cells
+          ↓
+        Connected components
+          ↓
+        Noise filtering
+          ↓
+        Conservative component merging
+          ↓
+        Geometric object classification
+
+    Every ObjectProposal also preserves exact point_indices
+    into the input point array.
     """
-
-    RESOLUTION_ZONES = [
-        (0.0, 10.0, 0.05),
-        (10.0, 25.0, 0.10),
-        (25.0, 50.0, 0.25),
-        (50.0, 100.0, 0.50),
-    ]
 
     def __init__(
         self,
         cluster_tolerance=0.35,
-        min_points=30,
-        max_range=100.0
+        min_points=5,
+        max_range=100.0,
     ):
 
-        # Kept for compatibility with previous code.
+        # Retained for API compatibility.
         self.cluster_tolerance = (
             cluster_tolerance
         )
 
-        self.min_points = min_points
-        self.max_range = max_range
+        self.min_points = (
+            min_points
+        )
 
-    # --------------------------------------------------------
-    # Determine adaptive resolution
-    # --------------------------------------------------------
+        self.max_range = (
+            max_range
+        )
 
-    def get_resolution(self, distance):
-
-        for r_min, r_max, resolution in (
-            self.RESOLUTION_ZONES
-        ):
-
-            if (
-                r_min
-                <= distance
-                < r_max
-            ):
-                return resolution
-
-        return None
-
-    # --------------------------------------------------------
-    # Distance-aware clustering
-    # --------------------------------------------------------
-
-    def _cluster_zone(
+    def detect(
         self,
         points,
-        resolution,
-        cluster_offset
     ):
+        """
+        Detect objects in a point cloud.
 
-        if len(points) == 0:
-            return []
+        Input points must be Nx3.
 
-        # ----------------------------------------------------
-        # Adaptive voxelization
-        #
-        # This is critical for performance.
-        #
-        # Instead of running DBSCAN on hundreds of thousands
-        # of raw points, we first compress the cloud according
-        # to ORBIT's current spatial resolution.
-        # ----------------------------------------------------
+        Returned proposal.point_indices refer to the
+        original input `points` array.
+        """
 
-        voxel_indices = np.floor(
-            points / resolution
-        ).astype(np.int64)
-
-        unique_voxels, inverse = np.unique(
-            voxel_indices,
-            axis=0,
-            return_inverse=True
-        )
-
-        # Calculate centroid of every voxel.
-        voxel_points = np.zeros(
-            (
-                len(unique_voxels),
-                3
-            ),
-            dtype=np.float64
-        )
-
-        np.add.at(
-            voxel_points,
-            inverse,
-            points
-        )
-
-        voxel_counts = np.bincount(
-            inverse
-        )
-
-        voxel_points /= (
-            voxel_counts[:, None]
-        )
-
-        # ----------------------------------------------------
-        # Adaptive DBSCAN tolerance
-        # ----------------------------------------------------
-
-        # A few resolution cells provide enough tolerance
-        # to connect points belonging to the same object.
-        eps = max(
-            resolution * 2.5,
-            0.10
-        )
-
-        labels = DBSCAN(
-            eps=eps,
-            min_samples=max(
-                3,
-                min(
-                    8,
-                    self.min_points // 10
-                )
-            ),
-            algorithm="ball_tree",
-            n_jobs=-1
-        ).fit_predict(
-            voxel_points
-        )
-
-        clusters = []
-
-        for label in np.unique(labels):
-
-            if label == -1:
-                continue
-
-            voxel_mask = (
-                labels == label
-            )
-
-            cluster_voxels = (
-                voxel_points[
-                    voxel_mask
-                ]
-            )
-
-            # Recover original points belonging
-            # to this cluster.
-            original_mask = np.isin(
-                inverse,
-                np.where(
-                    voxel_mask
-                )[0]
-            )
-
-            cluster_points = (
-                points[
-                    original_mask
-                ]
-            )
-
-            if (
-                len(cluster_points)
-                < self.min_points
-            ):
-                continue
-
-            clusters.append(
-                (
-                    cluster_offset + label,
-                    cluster_points
-                )
-            )
-
-        return clusters
-
-    # --------------------------------------------------------
-    # Detect
-    # --------------------------------------------------------
-
-    def detect(self, points):
-
-        points = np.asarray(
+        original_points = np.asarray(
             points,
-            dtype=np.float64
+            dtype=np.float64,
         )
 
-        if len(points) == 0:
+        if (
+            original_points.ndim != 2
+            or original_points.shape[1] != 3
+        ):
+            raise ValueError(
+                "points must have shape (N, 3)"
+            )
+
+        if len(original_points) == 0:
             return []
 
         # ----------------------------------------------------
-        # Keep only ORBIT's 100m operating range
+        # Range filter
+        #
+        # Preserve original indices.
         # ----------------------------------------------------
 
-        distance = np.sqrt(
-            points[:, 0] ** 2
-            + points[:, 1] ** 2
+        distances = np.linalg.norm(
+            original_points[:, :2],
+            axis=1,
         )
 
         range_mask = (
-            distance < self.max_range
+            distances <= self.max_range
         )
 
-        points = points[
+        filtered_indices = np.flatnonzero(
             range_mask
-        ]
+        ).astype(
+            np.int64,
+            copy=False,
+        )
 
-        distance = distance[
-            range_mask
-        ]
+        points_in_range = (
+            original_points[
+                filtered_indices
+            ]
+        )
 
-        if len(points) == 0:
+        if len(points_in_range) == 0:
             return []
 
         # ----------------------------------------------------
-        # Divide points into ORBIT resolution zones
+        # Ground
         # ----------------------------------------------------
 
-        zone_clusters = []
-
-        cluster_offset = 0
-
-        for r_min, r_max, resolution in (
-            self.RESOLUTION_ZONES
-        ):
-
-            zone_mask = (
-                (distance >= r_min)
-                & (distance < r_max)
-            )
-
-            zone_points = points[
-                zone_mask
-            ]
-
-            if len(zone_points) == 0:
-                continue
-
-            print(
-                f"  Zone "
-                f"{r_min:.0f}-{r_max:.0f}m "
-                f"| resolution="
-                f"{resolution * 100:.0f}cm "
-                f"| points="
-                f"{len(zone_points):,}"
-            )
-
-            clusters = self._cluster_zone(
-                zone_points,
-                resolution,
-                cluster_offset
-            )
-
-            zone_clusters.extend(
-                clusters
-            )
-
-            cluster_offset += (
-                len(clusters) + 1000
-            )
-
-        # ----------------------------------------------------
-        # Convert clusters into object proposals
-        # ----------------------------------------------------
-
-        proposals = []
-
-        for cluster_id, cluster_points in (
-            zone_clusters
-        ):
-
-            proposal = (
-                self._create_proposal(
-                    cluster_id,
-                    cluster_points
-                )
-            )
-
-            if proposal is not None:
-                proposals.append(
-                    proposal
-                )
-
-        # ----------------------------------------------------
-        # Sort by distance
-        # ----------------------------------------------------
-
-        proposals.sort(
-            key=lambda obj: obj.distance
+        ground_mask = detect_ground(
+            points_in_range,
+            distance_threshold=0.08,
+            seed=42,
         )
 
-        # Re-number objects for clean presentation.
-        for i, proposal in enumerate(
-            proposals,
-            start=1
-        ):
+        # ----------------------------------------------------
+        # Adaptive grid
+        # ----------------------------------------------------
 
-            proposal.cluster_id = i
+        grid = AdaptiveGrid()
+
+        grid.build(
+            points_in_range,
+            ground_mask,
+        )
+
+        # ----------------------------------------------------
+        # Terrain-relative obstacle cells
+        # ----------------------------------------------------
+
+        obstacle_cells = (
+            extract_obstacle_cells(
+                grid,
+                minimum_height=0.15,
+                minimum_obstacle_points=3,
+            )
+        )
+
+        if not obstacle_cells:
+            return []
+
+        # ----------------------------------------------------
+        # Connected components
+        # ----------------------------------------------------
+
+        components = (
+            connected_components(
+                obstacle_cells
+            )
+        )
+
+        # ----------------------------------------------------
+        # Noise filtering
+        # ----------------------------------------------------
+
+        filtered = (
+            filter_components(
+                components,
+                minimum_cells=3,
+                minimum_points=self.min_points,
+            )
+        )
+
+        if not filtered:
+            return []
+
+        # ----------------------------------------------------
+        # Component merging
+        # ----------------------------------------------------
+
+        merged = (
+            merge_components(
+                filtered
+            )
+        )
+
+        # ----------------------------------------------------
+        # Create proposals
+        # ----------------------------------------------------
+
+        proposals = (
+            create_object_proposals(
+                merged
+            )
+        )
+
+        # ----------------------------------------------------
+        # Recover indices relative to filtered points
+        # ----------------------------------------------------
+
+        attach_point_indices(
+            proposals,
+            merged,
+            points_in_range,
+        )
+
+        # ----------------------------------------------------
+        # Convert filtered-point indices back to ORIGINAL
+        # input indices.
+        # ----------------------------------------------------
+
+        for proposal in proposals:
+
+            local_indices = (
+                proposal.point_indices
+            )
+
+            if len(local_indices):
+
+                original_point_indices = (
+                    filtered_indices[
+                        local_indices
+                    ]
+                )
+
+                proposal.point_indices = (
+                    original_point_indices
+                )
+
+                proposal.points = (
+                    original_points[
+                        original_point_indices
+                    ]
+                )
+
+            else:
+
+                proposal.point_indices = (
+                    np.empty(
+                        0,
+                        dtype=np.int64,
+                    )
+                )
+
+                proposal.points = (
+                    np.empty(
+                        (0, 3),
+                        dtype=np.float64,
+                    )
+                )
 
         return proposals
 
-    # ========================================================
-    # Object feature extraction
-    # ========================================================
 
-    def _create_proposal(
-        self,
-        cluster_id,
-        points
-    ):
+# ============================================================
+# Reporting
+# ============================================================
 
-        if len(points) < self.min_points:
-            return None
+def print_object(
+    proposal,
+):
+    """
+    Print one object proposal.
+    """
 
-        # ----------------------------------------------------
-        # Bounding dimensions
-        # ----------------------------------------------------
+    width, length, height = (
+        proposal.dimensions
+    )
 
-        minimum = np.min(
-            points,
-            axis=0
-        )
+    x, y, z = proposal.center
 
-        maximum = np.max(
-            points,
-            axis=0
-        )
+    print(
+        f"\nObject #{proposal.object_id}"
+    )
 
-        dimensions = (
-            maximum - minimum
-        )
+    print(
+        f"  Classification: "
+        f"{proposal.classification}"
+    )
 
-        dx = dimensions[0]
-        dy = dimensions[1]
-        dz = dimensions[2]
+    print(
+        f"  Cells:          "
+        f"{proposal.cell_count:,}"
+    )
 
-        # ----------------------------------------------------
-        # Center
-        # ----------------------------------------------------
+    print(
+        f"  Points:         "
+        f"{proposal.point_count:,}"
+    )
 
-        center = (
-            np.mean(
-                points[:, 0]
-            ),
-            np.mean(
-                points[:, 1]
-            ),
-            np.mean(
-                points[:, 2]
-            )
-        )
+    print(
+        f"  Dimensions:     "
+        f"{width:.2f}m × "
+        f"{length:.2f}m × "
+        f"{height:.2f}m"
+    )
 
-        # ----------------------------------------------------
-        # Distance from LiDAR
-        # ----------------------------------------------------
+    print(
+        f"  Center:         "
+        f"({x:.2f}, {y:.2f}, {z:.2f})m"
+    )
 
-        distance = np.sqrt(
-            center[0] ** 2
-            + center[1] ** 2
-        )
+    print(
+        f"  Distance:       "
+        f"{proposal.distance:.2f}m"
+    )
 
-        # ----------------------------------------------------
-        # Verticality
-        #
-        # Height / horizontal width.
-        #
-        # High value = pole-like structure.
-        # ----------------------------------------------------
+    print(
+        f"  Max height:     "
+        f"{proposal.max_height:.2f}m"
+    )
 
-        horizontal_size = max(
-            min(dx, dy),
-            0.05
-        )
+    print(
+        f"  Mean height:    "
+        f"{proposal.mean_height:.2f}m"
+    )
 
-        verticality = (
-            dz
-            / horizontal_size
-        )
+    print(
+        f"  Footprint area: "
+        f"{proposal.footprint_area:.2f}m²"
+    )
 
-        # ----------------------------------------------------
-        # Density
-        # ----------------------------------------------------
+    print(
+        f"  Aspect ratio:   "
+        f"{proposal.aspect_ratio:.2f}"
+    )
 
-        volume = max(
-            dx * dy * dz,
-            1e-6
-        )
+    print(
+        f"  Verticality:    "
+        f"{proposal.verticality:.2f}"
+    )
 
-        density = (
-            len(points)
-            / volume
-        )
+    print(
+        f"  Density:        "
+        f"{proposal.density:.2f} pts/m²"
+    )
 
-        # ----------------------------------------------------
-        # Classification
-        # ----------------------------------------------------
-
-        classification = (
-            self._classify(
-                dx,
-                dy,
-                dz,
-                verticality,
-                len(points)
-            )
-        )
-
-        return ObjectProposal(
-            cluster_id=cluster_id,
-            points=points,
-            classification=classification,
-            center=center,
-            dimensions=(
-                dx,
-                dy,
-                dz
-            ),
-            distance=distance,
-            verticality=verticality,
-            density=density
-        )
-
-    # ========================================================
-    # Geometric classification
-    # ========================================================
-
-    def _classify(
-        self,
-        dx,
-        dy,
-        dz,
-        verticality,
-        point_count
-    ):
-
-        horizontal_max = max(
-            dx,
-            dy
-        )
-
-        horizontal_min = min(
-            dx,
-            dy
-        )
-
-        # ----------------------------------------------------
-        # POLE
-        # ----------------------------------------------------
-
-        if (
-            dz >= 2.0
-            and horizontal_max <= 0.8
-            and verticality >= 3.5
-        ):
-
-            return "POLE"
-
-        # ----------------------------------------------------
-        # WALL
-        # ----------------------------------------------------
-
-        if (
-            dz >= 1.0
-            and horizontal_max >= 1.5
-            and horizontal_min <= 2.5
-            and verticality >= 0.35
-        ):
-
-            return "WALL"
-
-        # ----------------------------------------------------
-        # VEHICLE-LIKE
-        # ----------------------------------------------------
-
-        if (
-            1.0 <= horizontal_max <= 5.0
-            and 1.0 <= horizontal_min <= 3.0
-            and 0.5 <= dz <= 2.5
-            and point_count >= 100
-        ):
-
-            return "VEHICLE_LIKE"
-
-        # ----------------------------------------------------
-        # PERSON-LIKE
-        # ----------------------------------------------------
-
-        if (
-            1.2 <= dz <= 2.2
-            and horizontal_max <= 1.0
-            and point_count >= 30
-        ):
-
-            return "PERSON_LIKE"
-
-        # ----------------------------------------------------
-        # Generic obstacle
-        # ----------------------------------------------------
-
-        return "OBSTACLE"
+    print(
+        f"  GT index count: "
+        f"{len(proposal.point_indices):,}"
+    )
 
 
 # ============================================================
-# Standalone test
+# Main
 # ============================================================
 
 def main():
 
     print("=" * 70)
     print(
-        "ORBIT - DISTANCE AWARE OBJECT DETECTION"
+        "ORBIT - TERRAIN RELATIVE OBJECT DETECTION"
     )
     print("=" * 70)
 
-    cloud = o3d.io.read_point_cloud(
-        "data/synthetic_scene.ply"
+    # --------------------------------------------------------
+    # Load SemanticKITTI frame
+    # --------------------------------------------------------
+
+    print(
+        "\nLoading SemanticKITTI frame..."
     )
 
-    points = np.asarray(
-        cloud.points
+    points = load_semantic_kitti_frame(
+        "data/semantic_kitti/"
+        "sequences/00/velodyne/000000.bin"
     )
 
     print(
-        f"\nInput points: "
+        f"Input points: "
         f"{len(points):,}"
     )
 
@@ -629,25 +1797,19 @@ def main():
     )
 
     ground_mask = detect_ground(
-        points
+        points,
+        distance_threshold=0.08,
+        seed=42,
     )
-
-    ground_points = points[
-        ground_mask
-    ]
-
-    non_ground_points = points[
-        ~ground_mask
-    ]
 
     print(
         f"Ground points: "
-        f"{len(ground_points):,}"
+        f"{ground_mask.sum():,}"
     )
 
     print(
         f"Non-ground points: "
-        f"{len(non_ground_points):,}"
+        f"{(~ground_mask).sum():,}"
     )
 
     # --------------------------------------------------------
@@ -655,16 +1817,17 @@ def main():
     # --------------------------------------------------------
 
     detector = ObjectDetector(
-        min_points=30,
-        max_range=100.0
+        min_points=5,
+        max_range=100.0,
     )
 
     print(
-        "\nDistance-aware clustering:"
+        "\nRunning ORBIT terrain-relative "
+        "object detection..."
     )
 
     proposals = detector.detect(
-        non_ground_points
+        points
     )
 
     # --------------------------------------------------------
@@ -686,44 +1849,8 @@ def main():
 
     for proposal in proposals:
 
-        dx, dy, dz = (
-            proposal.dimensions
-        )
-
-        print(
-            f"\nObject #{proposal.cluster_id}"
-        )
-
-        print(
-            f"  Classification: "
-            f"{proposal.classification}"
-        )
-
-        print(
-            f"  Points: "
-            f"{len(proposal.points):,}"
-        )
-
-        print(
-            f"  Dimensions: "
-            f"{dx:.2f}m × "
-            f"{dy:.2f}m × "
-            f"{dz:.2f}m"
-        )
-
-        print(
-            f"  Distance: "
-            f"{proposal.distance:.2f}m"
-        )
-
-        print(
-            f"  Verticality: "
-            f"{proposal.verticality:.2f}"
-        )
-
-        print(
-            f"  Density: "
-            f"{proposal.density:.2f}"
+        print_object(
+            proposal
         )
 
     # --------------------------------------------------------
@@ -737,7 +1864,10 @@ def main():
         label = proposal.classification
 
         summary[label] = (
-            summary.get(label, 0)
+            summary.get(
+                label,
+                0,
+            )
             + 1
         )
 
@@ -758,7 +1888,7 @@ def main():
     ):
 
         print(
-            f"  {label:<20} "
+            f"  {label:<20}"
             f"{count}"
         )
 
@@ -767,8 +1897,8 @@ def main():
     )
 
     print(
-        "ORBIT DISTANCE-AWARE "
-        "DETECTION COMPLETE"
+        "ORBIT TERRAIN RELATIVE "
+        "OBJECT DETECTION COMPLETE"
     )
 
     print(

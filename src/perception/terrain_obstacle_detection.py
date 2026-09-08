@@ -78,44 +78,154 @@ def build_adaptive_grid(points, ground_mask):
     return grid
 
 
+def estimate_local_ground(
+    cell,
+    grid,
+    search_radius_cells=20,
+):
+    """
+    Estimate terrain elevation using nearby ground cells
+    at the same adaptive resolution level.
+    """
+
+    resolution = cell.resolution
+
+    weighted_sum = 0.0
+    weight_sum = 0.0
+
+    for dx in range(
+        -search_radius_cells,
+        search_radius_cells + 1,
+    ):
+
+        for dy in range(
+            -search_radius_cells,
+            search_radius_cells + 1,
+        ):
+
+            if dx == 0 and dy == 0:
+                continue
+
+            neighbor_key = (
+                cell.level,
+                cell.ix + dx,
+                cell.iy + dy,
+            )
+
+            neighbor = grid.cells.get(
+                neighbor_key
+            )
+
+            if neighbor is None:
+                continue
+
+            if neighbor.ground_count == 0:
+                continue
+
+            distance_cells = np.sqrt(
+                dx * dx
+                + dy * dy
+            )
+
+            distance = (
+                distance_cells
+                * resolution
+            )
+
+            weight = 1.0 / (
+                distance + 1e-3
+            )
+
+            weighted_sum += (
+                weight
+                * neighbor.ground_elevation
+            )
+
+            weight_sum += weight
+
+    if weight_sum == 0.0:
+        return None
+
+    return (
+        weighted_sum
+        / weight_sum
+    )
+
+
 def extract_obstacle_cells(
     grid,
     minimum_height=0.15,
     minimum_obstacle_points=1,
+    ground_search_radius=20,
 ):
-    """
-    Convert adaptive cells into an obstacle-cell representation.
-
-    A cell becomes an obstacle cell when:
-        obstacle height >= minimum_height
-
-    Height is measured relative to the local ground elevation.
-    """
 
     obstacle_cells = []
 
     for cell in grid.cells.values():
 
-        # Cell contains no obstacle observations.
-        if cell.obstacle_count < minimum_obstacle_points:
+        # --------------------------------------------------
+        # Must contain obstacle observations
+        # --------------------------------------------------
+
+        if (
+            cell.obstacle_count
+            < minimum_obstacle_points
+        ):
             continue
 
-        # No ground reference available.
-        if cell.ground_count == 0:
+        obstacle_z = (
+            cell.obstacle_elevation
+        )
+
+        if obstacle_z is None:
             continue
 
-        ground_z = cell.ground_elevation
-        obstacle_z = cell.obstacle_elevation
+        # --------------------------------------------------
+        # Get ground reference
+        # --------------------------------------------------
 
-        if ground_z is None or obstacle_z is None:
+        if cell.ground_count > 0:
+
+            ground_z = (
+                cell.ground_elevation
+            )
+
+        else:
+
+            ground_z = (
+                estimate_local_ground(
+                    cell,
+                    grid,
+                    search_radius_cells=
+                        ground_search_radius,
+                )
+            )
+
+        # --------------------------------------------------
+        # No terrain estimate available
+        # --------------------------------------------------
+
+        if ground_z is None:
             continue
 
-        height = obstacle_z - ground_z
+        # --------------------------------------------------
+        # Terrain-relative height
+        # --------------------------------------------------
+
+        height = (
+            obstacle_z
+            - ground_z
+        )
 
         if height < minimum_height:
             continue
 
+        # --------------------------------------------------
+        # Create obstacle representation
+        # --------------------------------------------------
+
         obstacle_cells.append(
+
             ObstacleCell(
                 level=cell.level,
                 ix=cell.ix,
@@ -124,7 +234,8 @@ def extract_obstacle_cells(
                 ground_elevation=ground_z,
                 obstacle_elevation=obstacle_z,
                 obstacle_height=height,
-                obstacle_count=cell.obstacle_count,
+                obstacle_count=
+                    cell.obstacle_count,
             )
         )
 

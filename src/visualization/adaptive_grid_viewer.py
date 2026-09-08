@@ -1,139 +1,556 @@
-import open3d as o3d
-import numpy as np
+"""
+ORBIT - Adaptive Grid Viewer
 
-from pathlib import Path
+Visualizes the actual adaptive cells produced by AdaptiveGrid.
+
+Uses the current AdaptiveGrid cell representation:
+    cell.center
+    cell.resolution
+    cell.level
+    cell.semantic_class
+
+Does not depend on:
+    grid.rings
+    radial_bin
+    sector
+"""
+
 import sys
+from pathlib import Path
 
-# Allow importing from src/mapping
-sys.path.append(
-    str(Path(__file__).resolve().parents[1])
-)
+import numpy as np
+import open3d as o3d
+import matplotlib.pyplot as plt
+from matplotlib.collections import PolyCollection
+from matplotlib.colors import Normalize
+
+
+# ============================================================
+# Allow imports from src
+# ============================================================
+
+SRC_DIR = Path(__file__).resolve().parents[1]
+
+if str(SRC_DIR) not in sys.path:
+    sys.path.append(str(SRC_DIR))
 
 from mapping.adaptive_grid import AdaptiveGrid
 
 
-def create_cell_boxes(grid):
+# ============================================================
+# Cell polygon
+# ============================================================
+
+def cell_polygon(cell):
     """
-    Convert occupied adaptive cells into
-    small 3D boxes for visualization.
+    Build a rectangular polygon using the actual
+    Cartesian center and resolution of the cell.
     """
 
-    boxes = []
+    x, y = cell.center
 
-    for (ring_id, radial_bin, sector), cell in grid.cells.items():
+    half = float(cell.resolution) / 2.0
 
-        resolution = cell.resolution
+    return [
+        (x - half, y - half),
+        (x + half, y - half),
+        (x + half, y + half),
+        (x - half, y + half),
+    ]
 
-        # Ring information
-        r_min = grid.rings[ring_id][0]
 
-        # Approximate radial position
-        r = (
-            r_min +
-            (radial_bin + 0.5) * resolution
+# ============================================================
+# Cell elevation
+# ============================================================
+
+def cell_elevation(cell):
+    """
+    Determine the elevation value used to color a cell.
+
+    Priority:
+        1. obstacle elevation
+        2. ground elevation
+        3. z_mean
+        4. zero
+    """
+
+    obstacle_count = getattr(
+        cell,
+        "obstacle_count",
+        0
+    )
+
+    if obstacle_count > 0:
+        return float(
+            getattr(
+                cell,
+                "obstacle_elevation",
+                0.0
+            )
         )
 
-        # Reconstruct approximate angular position
-        radius = max(r, resolution)
+    ground_count = getattr(
+        cell,
+        "ground_count",
+        0
+    )
 
-        angular_width = resolution / radius
-
-        theta = (
-            sector + 0.5
-        ) * angular_width
-
-        # Convert polar → Cartesian
-        x = r * np.cos(theta)
-        y = r * np.sin(theta)
-
-        # Height
-        if hasattr(cell, "z_min"):
-            z = cell.z_mean
-        else:
-            z = 0
-
-        # Create a small box representing the cell
-        box = o3d.geometry.TriangleMesh.create_box(
-            width=resolution,
-            height=resolution,
-            depth=resolution
+    if ground_count > 0:
+        return float(
+            getattr(
+                cell,
+                "ground_elevation",
+                0.0
+            )
         )
 
-        box.translate(
-            [
-                x - resolution / 2,
-                y - resolution / 2,
-                z
-            ]
-        )
+    if hasattr(cell, "z_mean"):
+        return float(cell.z_mean)
 
-        # Color according to resolution
-        if resolution == 0.05:
-            color = [0.1, 0.8, 0.1]
+    return 0.0
 
-        elif resolution == 0.10:
-            color = [0.2, 0.5, 1.0]
 
-        elif resolution == 0.25:
-            color = [1.0, 0.7, 0.1]
-
-        else:
-            color = [0.9, 0.2, 0.2]
-
-        box.paint_uniform_color(color)
-
-        boxes.append(box)
-
-    return boxes
-
+# ============================================================
+# Main
+# ============================================================
 
 def main():
 
-    print("Loading ORBIT point cloud...")
+    print("=" * 70)
+    print("ORBIT - TRUE ADAPTIVE RESOLUTION MAP")
+    print("=" * 70)
 
-    point_cloud = o3d.io.read_point_cloud(
+    # ========================================================
+    # Load point cloud
+    # ========================================================
+
+    cloud_path = Path(
         "data/synthetic_scene.ply"
     )
 
-    points = np.asarray(
-        point_cloud.points
+    print("\nLoading ORBIT point cloud...")
+
+    if not cloud_path.exists():
+        raise FileNotFoundError(
+            f"Point cloud not found: {cloud_path}"
+        )
+
+    cloud = o3d.io.read_point_cloud(
+        str(cloud_path)
     )
+
+    points = np.asarray(
+        cloud.points
+    )
+
+    if len(points) == 0:
+        raise RuntimeError(
+            "Point cloud is empty."
+        )
 
     print(
         f"Input points: {len(points):,}"
     )
 
+    # ========================================================
+    # Ground detection
+    # ========================================================
+
+    print("\nDetecting ground...")
+
+    plane_model, inliers = cloud.segment_plane(
+        distance_threshold=0.08,
+        ransac_n=3,
+        num_iterations=1000
+    )
+
+    ground_mask = np.zeros(
+        len(points),
+        dtype=bool
+    )
+
+    ground_mask[inliers] = True
+
+    print(
+        f"Ground points: "
+        f"{int(ground_mask.sum()):,}"
+    )
+
+    print(
+        f"Non-ground points: "
+        f"{int((~ground_mask).sum()):,}"
+    )
+
+    # ========================================================
     # Build adaptive grid
+    # ========================================================
+
+    print("\nBuilding adaptive grid...")
+
     grid = AdaptiveGrid()
-    grid.build(points)
+
+    # IMPORTANT:
+    # AdaptiveGrid.build() returns mapped point data,
+    # not an integer count.
+    mapped_result = grid.build(
+        points,
+        ground_mask
+    )
+
+    mapped_points = len(
+        mapped_result
+    )
+
+    print(
+        f"Mapped points: "
+        f"{mapped_points:,}"
+    )
 
     print(
         f"Adaptive cells: "
         f"{len(grid.cells):,}"
     )
 
-    # Create visualization geometry
-    boxes = create_cell_boxes(grid)
+    if not grid.cells:
+        raise RuntimeError(
+            "Adaptive grid contains no cells."
+        )
+
+    # ========================================================
+    # Prepare visualization data
+    # ========================================================
+
+    polygons = []
+    elevations = []
+
+    level_counts = {
+        0: 0,
+        1: 0,
+        2: 0,
+        3: 0
+    }
+
+    ground_cells = 0
+    obstacle_cells = 0
+    mixed_cells = 0
+
+    # ========================================================
+    # Read actual adaptive cells
+    # ========================================================
+
+    for cell in grid.cells.values():
+
+        point_count = getattr(
+            cell,
+            "point_count",
+            0
+        )
+
+        if point_count == 0:
+            continue
+
+        # ----------------------------------------------------
+        # Geometry
+        # ----------------------------------------------------
+
+        polygons.append(
+            cell_polygon(cell)
+        )
+
+        # ----------------------------------------------------
+        # Elevation
+        # ----------------------------------------------------
+
+        elevations.append(
+            cell_elevation(cell)
+        )
+
+        # ----------------------------------------------------
+        # Resolution level
+        # ----------------------------------------------------
+
+        level = int(
+            getattr(
+                cell,
+                "level",
+                0
+            )
+        )
+
+        if level in level_counts:
+            level_counts[level] += 1
+
+        # ----------------------------------------------------
+        # Semantic class
+        # ----------------------------------------------------
+
+        semantic_class = str(
+            getattr(
+                cell,
+                "semantic_class",
+                "UNKNOWN"
+            )
+        ).upper()
+
+        if semantic_class == "GROUND":
+
+            ground_cells += 1
+
+        elif semantic_class == "OBSTACLE":
+
+            obstacle_cells += 1
+
+        else:
+
+            mixed_cells += 1
+
+    # ========================================================
+    # Validate visualization data
+    # ========================================================
+
+    if not polygons:
+        raise RuntimeError(
+            "No occupied adaptive cells were available "
+            "for visualization."
+        )
+
+    elevations = np.asarray(
+        elevations,
+        dtype=float
+    )
+
+    # ========================================================
+    # Create figure
+    # ========================================================
+
+    fig, ax = plt.subplots(
+        figsize=(15, 11)
+    )
+
+    # ========================================================
+    # Elevation normalization
+    # ========================================================
+
+    elevation_min = float(
+        np.min(elevations)
+    )
+
+    elevation_max = float(
+        np.max(elevations)
+    )
+
+    # Avoid zero-width normalization.
+    if np.isclose(
+        elevation_min,
+        elevation_max
+    ):
+        elevation_max = (
+            elevation_min + 1e-6
+        )
+
+    norm = Normalize(
+        vmin=elevation_min,
+        vmax=elevation_max
+    )
+
+    cmap = plt.get_cmap(
+        "viridis"
+    )
+
+    facecolors = cmap(
+        norm(elevations)
+    )
+
+    # ========================================================
+    # Draw adaptive cells
+    # ========================================================
+
+    collection = PolyCollection(
+        polygons,
+        facecolors=facecolors,
+        edgecolors="none",
+        linewidths=0
+    )
+
+    ax.add_collection(
+        collection
+    )
+
+    # ========================================================
+    # LiDAR sensor
+    # ========================================================
+
+    ax.scatter(
+        0,
+        0,
+        marker="x",
+        s=180,
+        linewidths=3,
+        label="LiDAR"
+    )
+
+    # ========================================================
+    # Resolution boundaries
+    # ========================================================
+
+    for radius in [10, 25, 50, 100]:
+
+        circle = plt.Circle(
+            (0, 0),
+            radius,
+            fill=False,
+            linestyle="--",
+            linewidth=1.2,
+            alpha=0.7
+        )
+
+        ax.add_patch(
+            circle
+        )
+
+    # ========================================================
+    # Resolution labels
+    # ========================================================
+
+    ax.text(
+        3,
+        7,
+        "5 cm",
+        fontsize=11
+    )
+
+    ax.text(
+        15,
+        7,
+        "10 cm",
+        fontsize=11
+    )
+
+    ax.text(
+        32,
+        7,
+        "25 cm",
+        fontsize=11
+    )
+
+    ax.text(
+        65,
+        7,
+        "50 cm",
+        fontsize=11
+    )
+
+    # ========================================================
+    # Colorbar
+    # ========================================================
+
+    scalar_map = plt.cm.ScalarMappable(
+        norm=norm,
+        cmap=cmap
+    )
+
+    scalar_map.set_array(
+        elevations
+    )
+
+    colorbar = fig.colorbar(
+        scalar_map,
+        ax=ax
+    )
+
+    colorbar.set_label(
+        "Elevation (m)"
+    )
+
+    # ========================================================
+    # Statistics
+    # ========================================================
+
+    stats_text = (
+        f"Input points: {len(points):,}\n"
+        f"Mapped points: {mapped_points:,}\n"
+        f"Adaptive cells: {len(grid.cells):,}\n\n"
+
+        f"5 cm cells: {level_counts[0]:,}\n"
+        f"10 cm cells: {level_counts[1]:,}\n"
+        f"25 cm cells: {level_counts[2]:,}\n"
+        f"50 cm cells: {level_counts[3]:,}\n\n"
+
+        f"Ground: {ground_cells:,}\n"
+        f"Obstacle: {obstacle_cells:,}\n"
+        f"Mixed/Other: {mixed_cells:,}\n\n"
+
+        f"Elevation min: {elevation_min:.2f} m\n"
+        f"Elevation max: {elevation_max:.2f} m"
+    )
+
+    ax.text(
+        1.02,
+        0.50,
+        stats_text,
+        transform=ax.transAxes,
+        verticalalignment="center",
+        fontsize=10,
+        bbox=dict(
+            boxstyle="round",
+            alpha=0.15
+        )
+    )
+
+    # ========================================================
+    # Formatting
+    # ========================================================
+
+    ax.set_title(
+        "ORBIT - True Adaptive 2.5D Resolution Map",
+        fontsize=18,
+        pad=15
+    )
+
+    ax.set_xlabel(
+        "X (m)"
+    )
+
+    ax.set_ylabel(
+        "Y (m)"
+    )
+
+    ax.set_aspect(
+        "equal",
+        adjustable="box"
+    )
+
+    ax.grid(
+        alpha=0.15
+    )
+
+    ax.legend(
+        loc="upper right"
+    )
+
+    ax.autoscale()
+
+    plt.tight_layout()
+
+    # ========================================================
+    # Render
+    # ========================================================
 
     print(
-        f"Visualizing {len(boxes):,} adaptive cells..."
+        "\nRendering adaptive cells..."
     )
 
-    # Add LiDAR sensor marker
-    sensor = o3d.geometry.TriangleMesh.create_sphere(
-        radius=0.15
+    print(
+        "Close the visualization window "
+        "to return to PowerShell."
     )
 
-    sensor.paint_uniform_color(
-        [0.0, 0.0, 0.0]
-    )
+    plt.show()
 
-    # Display
-    o3d.visualization.draw_geometries(
-        [sensor] + boxes,
-        window_name="ORBIT - Adaptive 2.5D Grid"
-    )
 
+# ============================================================
+# Entry point
+# ============================================================
 
 if __name__ == "__main__":
     main()

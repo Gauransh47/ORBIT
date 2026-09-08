@@ -193,36 +193,48 @@ def cell_bounds(cell):
 
 def cells_touch(cell_a, cell_b):
     """
-    Resolution-aware adjacency test.
+    Resolution-aware proximity test.
 
-    Two cells are connected when their horizontal footprints
-    overlap or touch.
-
-    A small tolerance handles floating-point boundaries.
+    Two obstacle cells are connected when their horizontal
+    footprints overlap, touch, or are separated by a small
+    LiDAR-sized gap.
     """
 
     ax0, ax1, ay0, ay1 = cell_bounds(cell_a)
     bx0, bx1, by0, by1 = cell_bounds(cell_b)
 
-    tolerance = (
-        max(
-            cell_a.resolution,
-            cell_b.resolution,
-        )
-        * 0.05
+    # Physical gap between the two rectangles.
+    gap_x = max(
+        bx0 - ax1,
+        ax0 - bx1,
+        0.0,
     )
 
-    x_overlap = (
-        ax0 <= bx1 + tolerance
-        and ax1 >= bx0 - tolerance
+    gap_y = max(
+        by0 - ay1,
+        ay0 - by1,
+        0.0,
     )
 
-    y_overlap = (
-        ay0 <= by1 + tolerance
-        and ay1 >= by0 - tolerance
+    # Euclidean horizontal separation.
+    horizontal_gap = np.sqrt(
+        gap_x * gap_x +
+        gap_y * gap_y
     )
 
-    return x_overlap and y_overlap
+    resolution = max(
+        cell_a.resolution,
+        cell_b.resolution,
+    )
+
+    # Allow sparse LiDAR returns belonging to the same object
+    # to bridge a small gap.
+    max_gap = max(
+        0.25,
+        0.75 * resolution,
+    )
+
+    return horizontal_gap <= max_gap
 
 
 # ============================================================
