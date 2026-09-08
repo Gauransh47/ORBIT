@@ -14,7 +14,7 @@ ORBIT/
   docs/                  # this documentation
   src/
     common/              # path helpers + diagnostic records only
-    datasets/            # SemanticKITTI / KITTI I/O
+    datasets/            # SemanticKITTI / KITTI I/O + nuScenes mini loader
     evaluation/          # merge diagnostics
     mapping/             # adaptive + semantic grids
     perception/          # ground, obstacles, clustering, association
@@ -108,6 +108,7 @@ PYTHONPATH=src python src/orbit_system.py --source kitti --sequence 00 --start 0
 ```
 
 See [dashboard.md](dashboard.md) for colour meanings and panel sources.
+nuScenes v1.0-mini (dataset **outside** the repo): [nuscenes.md](nuscenes.md).
 
 DBSCAN sidecar:
 

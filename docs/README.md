@@ -13,6 +13,7 @@ are never described as finished unless they exist in the code.
 | [Architecture](architecture.md) | How the **current** code is structured and how data flows |
 | [Development](development.md) | Setup, how to run scripts, tests, conventions |
 | [Dashboard](dashboard.md) | Visual Intelligence dashboard (real pipeline outputs) |
+| [nuScenes](nuscenes.md) | v1.0-mini LIDAR_TOP adapter (external dataset) |
 
 There is no packaged Python distribution and no root README.
 Application code lives under `src/`.

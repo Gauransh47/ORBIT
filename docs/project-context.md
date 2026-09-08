@@ -99,7 +99,8 @@ class (not learned traversability), tracking, and metrics.
 FPS for whatever machine runs them. They are not a claim of
 operational real-time or of accuracy metrics.
 
-**Tracking / world model** (KITTI poses) keep object identities over
+**Tracking / world model** (KITTI poses or nuScenes ego/lidar extras)
+keep object identities over
 frames using GT semantics plus greedy matching. Motion state is
 rule-based in world/LiDAR-frame 0 coordinates.
 

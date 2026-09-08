@@ -28,11 +28,14 @@ Usage (repo root):
 
     PYTHONPATH=src python src/orbit_system.py --source synthetic
     PYTHONPATH=src python src/orbit_system.py --source kitti --start 0 --end 4
+    PYTHONPATH=src python src/orbit_system.py --source nuscenes \
+        --dataset-root D:/ORBIT_DATA/nuscenes --scene scene-0061 --start 0 --end 9
 """
 
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 import time
 from dataclasses import dataclass, field
@@ -119,6 +122,9 @@ class OrbitSystem:
         ego_motion = self.tracker.ego_motion
         if ego_motion is None:
             return "identity_no_odometry"
+        explicit = getattr(ego_motion, "pose_source", None)
+        if explicit:
+            return str(explicit)
         poses = getattr(ego_motion, "poses", None)
         if poses is None or len(poses) == 0:
             return "identity_empty_poses"
@@ -309,15 +315,25 @@ def get_args():
     )
     parser.add_argument(
         "--source",
-        choices=("synthetic", "kitti"),
+        choices=("synthetic", "kitti", "nuscenes"),
         default="synthetic",
     )
     parser.add_argument("--sequence", default="00")
+    parser.add_argument(
+        "--scene",
+        default=None,
+        help="nuScenes scene name (e.g. scene-0061). Ignored for KITTI.",
+    )
     parser.add_argument("--start", type=int, default=0)
     parser.add_argument("--end", type=int, default=0)
     parser.add_argument(
         "--dataset-root",
         default=str(SEMANTIC_KITTI_ROOT),
+        help=(
+            "KITTI: SemanticKITTI root (default data/semantic_kitti). "
+            "nuScenes: path to the extract (samples/, v1.0-mini/). "
+            "Not defaulted to a Windows D: drive."
+        ),
     )
     parser.add_argument(
         "--show",
@@ -350,10 +366,32 @@ def get_args():
     return parser.parse_args()
 
 
+def resolve_nuscenes_root(dataset_root: str) -> Path:
+    """
+    nuScenes lives outside the repo. Do not fall back to the KITTI default
+    path; require --dataset-root or ORBIT_NUSCENES_ROOT.
+    """
+
+    root = Path(dataset_root)
+    if root != Path(SEMANTIC_KITTI_ROOT) and str(dataset_root):
+        return root
+    env = os.environ.get("ORBIT_NUSCENES_ROOT", "").strip()
+    if env:
+        return Path(env)
+    raise SystemExit(
+        "nuScenes requires --dataset-root pointing at the extract "
+        "(e.g. D:\\ORBIT_DATA\\nuscenes), or ORBIT_NUSCENES_ROOT. "
+        "The dataset must stay outside the Git repository."
+    )
+
+
 def main():
     args = get_args()
 
     ego_motion = None
+    nuscenes_loader = None
+    display_seq = str(args.sequence)
+
     if args.source == "kitti":
         from tracking.ego_motion import EgoMotionCompensator
 
@@ -361,22 +399,51 @@ def main():
             args.dataset_root,
             sequence=args.sequence,
         )
+    elif args.source == "nuscenes":
+        from datasets.nuscenes_loader import NuScenesMiniLoader
+        from tracking.nuscenes_ego_motion import NuScenesEgoMotion
+
+        nusc_root = resolve_nuscenes_root(args.dataset_root)
+        probe = NuScenesMiniLoader(nusc_root)
+        scene_name = args.scene
+        if not scene_name:
+            names = probe.list_scenes()
+            if not names:
+                raise SystemExit(f"No scenes in {nusc_root / 'v1.0-mini'}")
+            scene_name = names[0]
+            print(f"No --scene given; using first scene {scene_name}")
+        nuscenes_loader = NuScenesMiniLoader(nusc_root, scene_name=scene_name)
+        ego_motion = NuScenesEgoMotion(nuscenes_loader)
+        display_seq = scene_name
 
     system = OrbitSystem(ego_motion=ego_motion)
 
     print("ORBIT prototype")
     print("World / reference frame: LiDAR frame 0")
-    print("Detector: geometric OrbitPerception (no SemanticKITTI GT)")
+    print("Detector: geometric OrbitPerception (no dataset GT labels)")
     if ego_motion is None:
-        print("Ego pose: identity (no KITTI poses.txt — trajectory stays at origin)")
+        print("Ego pose: identity (no odometry — trajectory stays at origin)")
     else:
-        print("Ego pose: KITTI poses.txt + calib Tr  →  LiDAR frame 0")
+        print(f"Ego pose: {system._pose_source_label()}")
     print()
 
     if args.source == "synthetic":
         points = load_synthetic_points()
         frames = [0]
         clouds = {0: points}
+    elif args.source == "nuscenes":
+        n_frames = nuscenes_loader.num_frames()
+        if args.start < 0 or args.end >= n_frames or args.end < args.start:
+            raise SystemExit(
+                f"Requested frames {args.start}..{args.end} but scene "
+                f"{nuscenes_loader.scene_name} has {n_frames} LIDAR_TOP keyframes "
+                f"(indices 0..{n_frames - 1})"
+            )
+        frames = list(range(args.start, args.end + 1))
+        clouds = {
+            frame: nuscenes_loader.load_xyz(frame) for frame in frames
+        }
+        system.tracker.set_timestamps(nuscenes_loader.timestamps_seconds())
     else:
         frames = list(range(args.start, args.end + 1))
         clouds = {
@@ -407,7 +474,7 @@ def main():
         paths = save_dashboard_frames(
             states,
             args.save_figures,
-            sequence=str(args.sequence),
+            sequence=display_seq,
             source=args.source,
             lidar_mode=args.lidar_color,
         )
@@ -416,7 +483,7 @@ def main():
     if (args.show or args.dashboard) and states:
         launch_dashboard(
             states,
-            sequence=str(args.sequence),
+            sequence=display_seq,
             source=args.source,
             lidar_mode=args.lidar_color,
             show=True,

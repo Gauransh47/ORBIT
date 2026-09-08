@@ -161,7 +161,7 @@ What exists:
 ## Data flow (current)
 
 ```
-LiDAR points (PLY or SemanticKITTI .bin)
+LiDAR points (PLY, SemanticKITTI .bin, or nuScenes LIDAR_TOP .pcd.bin)
         │
         ├─ range filter (< 100 m)
         ├─ ground mask (RANSAC or z < 0 fallback)

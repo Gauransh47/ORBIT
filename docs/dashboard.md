@@ -27,16 +27,20 @@ clouds from frame 0 through the selected slider index.
 When `--source kitti`, `OrbitSystem` attaches `EgoMotionCompensator`
 (`sequences/<seq>/poses.txt` + `calib.txt` `Tr`).
 
+When `--source nuscenes`, it attaches `NuScenesEgoMotion` (LIDAR_TOP
+keyframe `calibrated_sensor` + `ego_pose`). See [nuscenes.md](nuscenes.md).
+
 For each frame:
 
 1. `T = ego_motion.transform(frame, 0)` — current LiDAR → LiDAR frame 0  
    (same transform the tracker applies to detections).
 2. `ego_xy` = translation of the sensor origin `(0,0,0)`.
-3. `ego_heading_rad` = `atan2` of KITTI LiDAR **+X** (forward) after `T`.
+3. `ego_heading_rad` = `atan2` of LiDAR **+X** (forward) after `T`.
 
 `pose_source` on each state is one of:
 
 - `kitti_poses_lidar_to_frame0` — KITTI odometry was loaded
+- `nuscenes_ego_pose_lidar_to_frame0` — nuScenes ego/lidar extras
 - `identity_no_odometry` — synthetic / no compensator (trajectory stays at origin)
 - `identity_empty_poses` — compensator present but no pose rows
 
