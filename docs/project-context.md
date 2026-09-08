@@ -89,10 +89,10 @@ detector. SemanticKITTI **ground-truth labels** can be pasted onto
 cells (`SemanticGrid`) and clustered (`SemanticObjectAssociator`).
 That is **not** ORBIT semantic segmentation.
 
-**Visualization** is a Matplotlib **Visual Intelligence dashboard**
-fed by `OrbitSystem` states (LiDAR, BEV, elevation, geometric
-traversability, tracking, metrics). There is no learned semantic
-display and no production vehicle HUD.
+**Visualization** is a Matplotlib **Visual Intelligence dashboard V2**
+fed by `OrbitSystem` states: live ego-frame LiDAR, global LiDAR-frame-0
+map with KITTI ego trajectory, elevation patches, geometric cell
+class (not learned traversability), tracking, and metrics.
 
 **Performance scripts** time `AdaptiveGrid` vs a uniform 5 cm dict
 (`benchmark.py`) and `OrbitPerception` stages. They report latency /

@@ -64,7 +64,15 @@ from visualization.dashboard import (
     save_dashboard_frames,
 )
 from visualization.architecture_view import render_architecture_diagram
+from visualization.dashboard_data import subsample_xyz
 from world_model.orbit_world_model import OrbitWorldModel
+
+
+# Deterministic per-frame world-map subsample. Full mapped_points stay in metrics.
+WORLD_SCAN_CAP = 8000
+
+# KITTI LiDAR +X is forward in the velodyne frame used by this prototype.
+LIDAR_FORWARD = np.array([1.0, 0.0, 0.0], dtype=np.float64)
 
 
 @dataclass
@@ -81,6 +89,13 @@ class PipelineState:
     retired_ids: list
     metrics: Dict[str, Any] = field(default_factory=dict)
     view_model: Dict[str, Any] = field(default_factory=dict)
+    # Ego pose in LiDAR frame 0. Identity when no odometry is attached.
+    ego_xy: tuple = (0.0, 0.0)
+    ego_heading_rad: float = 0.0
+    pose_source: str = "identity_no_odometry"
+    T_ego_to_world: Optional[np.ndarray] = None
+    # Current scan transformed into LiDAR frame 0 (subsampled).
+    world_points: Optional[np.ndarray] = None
 
 
 class OrbitSystem:
@@ -99,6 +114,45 @@ class OrbitSystem:
         )
         self.world_model = OrbitWorldModel()
         self.world_reference_frame = int(world_reference_frame)
+
+    def _pose_source_label(self) -> str:
+        ego_motion = self.tracker.ego_motion
+        if ego_motion is None:
+            return "identity_no_odometry"
+        poses = getattr(ego_motion, "poses", None)
+        if poses is None or len(poses) == 0:
+            return "identity_empty_poses"
+        return "kitti_poses_lidar_to_frame0"
+
+    def ego_to_world_matrix(self, frame_index: int) -> np.ndarray:
+        """4x4: current LiDAR frame → LiDAR frame 0."""
+
+        ego_motion = self.tracker.ego_motion
+        if ego_motion is None:
+            return np.eye(4, dtype=np.float64)
+        return np.asarray(
+            ego_motion.transform(int(frame_index), self.world_reference_frame),
+            dtype=np.float64,
+        )
+
+    def ego_pose_in_world(self, frame_index: int):
+        """
+        Sensor origin and heading in LiDAR frame 0.
+
+        Heading is atan2 of KITTI LiDAR +X (forward) after the same
+        transform the tracker uses for detections. Not a GPS heading.
+        """
+
+        T = self.ego_to_world_matrix(frame_index)
+        origin = T[:3, 3]
+        forward = T[:3, :3] @ LIDAR_FORWARD
+        heading = float(np.arctan2(forward[1], forward[0]))
+        return (
+            (float(origin[0]), float(origin[1])),
+            heading,
+            T,
+            self._pose_source_label(),
+        )
 
     def process_frame(self, points, frame_index: int) -> PipelineState:
         start = time.perf_counter()
@@ -134,6 +188,20 @@ class OrbitSystem:
 
         elapsed = time.perf_counter() - start
 
+        ego_xy, heading, T_ego_to_world, pose_source = self.ego_pose_in_world(
+            frame_index
+        )
+        scan_sub = subsample_xyz(xyz, WORLD_SCAN_CAP, seed=10_000 + int(frame_index))
+        ego_motion = self.tracker.ego_motion
+        if ego_motion is not None and len(scan_sub):
+            world_points = ego_motion.transform_points(
+                scan_sub,
+                source_frame=int(frame_index),
+                target_frame=self.world_reference_frame,
+            )
+        else:
+            world_points = scan_sub
+
         metrics = {
             "latency_ms": elapsed * 1000.0,
             "input_points": int(len(points)),
@@ -149,6 +217,10 @@ class OrbitSystem:
             "world_objects": int(len(self.world_model.objects)),
             "retired_ids": list(retired_ids),
             "world_frame": "lidar_frame_0",
+            "pose_source": pose_source,
+            "ego_x": ego_xy[0],
+            "ego_y": ego_xy[1],
+            "ego_heading_rad": heading,
         }
 
         state = PipelineState(
@@ -163,6 +235,11 @@ class OrbitSystem:
             world_objects=list(self.world_model.objects.values()),
             retired_ids=list(retired_ids),
             metrics=metrics,
+            ego_xy=ego_xy,
+            ego_heading_rad=heading,
+            pose_source=pose_source,
+            T_ego_to_world=T_ego_to_world,
+            world_points=world_points,
         )
         state.view_model = view_model_from_state(state)
         return state
@@ -174,6 +251,8 @@ def print_frame_metrics(state: PipelineState):
     print(f"ORBIT SYSTEM  frame {state.frame_index}")
     print("=" * 70)
     print(f"  World frame:     {m['world_frame']}")
+    print(f"  Ego XY (frame0): ({state.ego_xy[0]:.3f}, {state.ego_xy[1]:.3f})")
+    print(f"  Pose source:     {state.pose_source}")
     print(f"  Mapped points:   {m['mapped_points']:,}")
     print(f"  Ground inliers:  {m['ground_points']:,}")
     print(f"  Adaptive cells:  {m['adaptive_cells']:,}")
@@ -288,6 +367,10 @@ def main():
     print("ORBIT prototype")
     print("World / reference frame: LiDAR frame 0")
     print("Detector: geometric OrbitPerception (no SemanticKITTI GT)")
+    if ego_motion is None:
+        print("Ego pose: identity (no KITTI poses.txt — trajectory stays at origin)")
+    else:
+        print("Ego pose: KITTI poses.txt + calib Tr  →  LiDAR frame 0")
     print()
 
     if args.source == "synthetic":
