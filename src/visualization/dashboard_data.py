@@ -271,6 +271,82 @@ def pose_source_of(states: Sequence) -> str:
     return str(getattr(states[-1], "pose_source", "unknown"))
 
 
+def pose_caption(pose_source: str) -> str:
+    """Short header label. ORBIT world is LiDAR frame 0, never nuScenes global."""
+
+    src = str(pose_source)
+    if src.startswith("nuscenes") or src.startswith("kitti"):
+        return "LIDAR FRAME 0"
+    if src.startswith("identity"):
+        return "IDENTITY"
+    return "LIDAR FRAME 0"
+
+
+def source_badge(source: str, sequence: str) -> str:
+    src = str(source).lower()
+    seq = str(sequence)
+    if src == "nuscenes":
+        return f"NUSCENES  ·  {seq.upper()}  ·  LIDAR_TOP"
+    if src == "kitti":
+        return f"KITTI  ·  SEQ {seq}  ·  VELODYNE"
+    return f"SYNTHETIC  ·  {seq}"
+
+
+def compact_count(n) -> str:
+    n = int(n)
+    if n >= 10000:
+        return f"{n / 1000.0:.1f}K"
+    if n >= 1000:
+        return f"{n / 1000.0:.1f}K"
+    return str(n)
+
+
+def travel_metres(states: Sequence, up_to: Optional[int] = None) -> float:
+    """Path length of real ego_xy samples. Not a hardcoded scene length."""
+
+    traj = extract_trajectory(states, up_to=up_to)
+    if len(traj) < 2:
+        if len(traj) == 1:
+            return float(np.hypot(traj[0, 0], traj[0, 1]))
+        return 0.0
+    delta = np.diff(traj, axis=0)
+    return float(np.sum(np.sqrt(np.sum(delta * delta, axis=1))))
+
+
+def track_class_counts(tracks) -> List[Tuple[str, int]]:
+    counts = {}
+    for track in tracks:
+        name = str(getattr(track, "class_name", "OBSTACLE"))
+        counts[name] = counts.get(name, 0) + 1
+    order = ["VEHICLE-LIKE", "POLE", "WALL", "OBSTACLE"]
+    items = [(k, counts[k]) for k in order if k in counts]
+    extra = sorted(
+        ((k, v) for k, v in counts.items() if k not in order),
+        key=lambda kv: -kv[1],
+    )
+    return items + extra
+
+
+def xy_bounds(xs, ys, pad_frac: float = 0.12, min_span: float = 10.0):
+    xs = np.asarray(xs, dtype=np.float64).ravel()
+    ys = np.asarray(ys, dtype=np.float64).ravel()
+    if len(xs) == 0 or len(ys) == 0:
+        return -min_span, min_span, -min_span, min_span
+    x0, x1 = np.percentile(xs, 2), np.percentile(xs, 98)
+    y0, y1 = np.percentile(ys, 2), np.percentile(ys, 98)
+    if not np.isfinite(x0):
+        x0, x1 = float(np.min(xs)), float(np.max(xs))
+        y0, y1 = float(np.min(ys)), float(np.max(ys))
+    span_x = max(float(x1 - x0), min_span)
+    span_y = max(float(y1 - y0), min_span)
+    span = max(span_x, span_y)
+    pad = span * pad_frac
+    cx = 0.5 * (x0 + x1)
+    cy = 0.5 * (y0 + y1)
+    half = 0.5 * span + pad
+    return cx - half, cx + half, cy - half, cy + half
+
+
 def accumulated_world_cloud(states: Sequence, index: int, max_points: int = MAX_WORLD_POINTS) -> np.ndarray:
     """
     Concatenate per-frame world-frame LiDAR subsamples up to `index`.

@@ -11,12 +11,17 @@ sys.path.append(str(Path(__file__).resolve().parents[1] / "src"))
 
 from visualization.dashboard_data import (
     accumulated_world_cloud,
+    compact_count,
     elevation_layer,
     extract_trajectory,
+    pose_caption,
     select_proposal_labels,
     select_track_labels,
+    source_badge,
     subsample_indices,
     terrain_point_labels,
+    track_class_counts,
+    travel_metres,
     traversability_code,
     traversability_layer,
     world_to_ego_xy,
@@ -244,3 +249,33 @@ def test_dashboard_slider_frames_use_same_real_states(tmp_path):
     assert extract_trajectory(states, up_to=1)[1, 0] == 5.0
     assert states[0].metrics["proposals"] == len(states[0].proposals)
     assert states[1].metrics["live_tracks"] == len(states[1].tracks)
+
+
+def test_v3_helpers_use_real_metrics_and_poses():
+    assert compact_count(34700) == "34.7K"
+    assert compact_count(400) == "400"
+    assert pose_caption("nuscenes_ego_pose_lidar_to_frame0") == "LIDAR FRAME 0"
+    assert "GLOBAL" not in pose_caption("nuscenes_ego_pose_lidar_to_frame0")
+    assert "NUSCENES" in source_badge("nuscenes", "scene-0061")
+    assert "LIDAR_TOP" in source_badge("nuscenes", "scene-0061")
+
+    tracks = [
+        _Track(1, True, 1.0, 0.0),
+        _Track(2, True, 2.0, 0.0),
+    ]
+    tracks[0].class_name = "VEHICLE-LIKE"
+    tracks[1].class_name = "POLE"
+    counts = dict(track_class_counts(tracks))
+    assert counts["VEHICLE-LIKE"] == 1
+    assert counts["POLE"] == 1
+
+
+def test_travel_metres_follows_ego_xy_not_hardcoded_scene():
+    class S:
+        def __init__(self, xy):
+            self.ego_xy = xy
+
+    states = [S((0.0, 0.0)), S((0.0, 4.5)), S((-0.01, 9.3))]
+    dist = travel_metres(states, up_to=2)
+    assert abs(dist - 9.3) < 0.2
+    assert travel_metres(states, up_to=0) == 0.0

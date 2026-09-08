@@ -1,48 +1,48 @@
 """
-ORBIT Visual Intelligence colour language.
+ORBIT Visual Intelligence colour language (Dashboard V3).
 
 Colours encode pipeline quantities, not decoration.
-Geometric classes are detector / grid labels, not SemanticKITTI GT
-and not a learned traversability model.
+Geometric classes are detector / grid labels, not learned drivability.
 """
 
-# Surfaces — dark scientific, not pure black
-BG = "#0C1016"
-PANEL = "#141A24"
-EDGE = "#2C3545"
-TEXT = "#E6EDF5"
-MUTED = "#8A93A6"
-ACCENT = "#3EC8FF"
+from matplotlib.colors import LinearSegmentedColormap
+
+# Surfaces
+BG = "#070B12"
+PANEL = "#10151F"
+EDGE = "#2A3344"
+TEXT = "#E8EEF6"
+MUTED = "#7E8899"
+ACCENT = "#3DDCFF"
 ORIGIN = "#F4F1EA"
 
 # Ego / motion
-EGO = "#7DFFF5"
-EGO_FILL = "#1A3A44"
-TRAJECTORY = "#3D78E8"
-TRAJECTORY_MARK = "#6AA0FF"
+EGO = "#5CFFF0"
+EGO_FILL = "#12383C"
+TRAJECTORY = "#3B82F6"
+TRAJECTORY_MARK = "#7EB0FF"
 CURRENT = "#FFFFFF"
-START = "#F0C14A"
+START = "#F5C542"
+LIVE_DOT = "#3DFF9A"
 
-# LiDAR terrain (RANSAC mask): ground vs non-ground
+# LiDAR terrain (RANSAC mask)
 TERRAIN_GROUND = "#2FBF9A"
 TERRAIN_NON_GROUND = "#E07050"
 
-# Geometric ObjectProposal.classification
+# Geometric ObjectProposal / track class
 PROPOSAL_COLORS = {
-    "VEHICLE-LIKE": "#4C9BE8",
-    "WALL": "#D4A017",
-    "POLE": "#C9C15A",
-    "OBSTACLE": "#D65A5A",
+    "VEHICLE-LIKE": "#3DDCFF",
+    "WALL": "#E8893A",
+    "POLE": "#A78BFA",
+    "OBSTACLE": "#F05252",
 }
-PROPOSAL_FALLBACK = "#A0A8B8"
+PROPOSAL_FALLBACK = "#8A93A4"
 
-# Geometric AdaptiveCell.semantic_class (not learned drivability)
-CELL_GROUND = "#2F9E6B"
-CELL_MIXED = "#C9A227"
-CELL_OBSTACLE = "#C44747"
+CELL_GROUND = "#1FA97A"
+CELL_MIXED = "#D4A017"
+CELL_OBSTACLE = "#D44545"
 CELL_UNKNOWN = "#3A4250"
 
-# Back-compat aliases used by older tests / architecture diagram
 TRAV_SAFE = CELL_GROUND
 TRAV_CAUTION = CELL_MIXED
 TRAV_BLOCKED = CELL_OBSTACLE
@@ -54,10 +54,14 @@ TRAV_LABELS = {
     2: "OBSTACLE",
 }
 
-ELEVATION_CMAP = "turbo"
-TRACK_CONFIRMED = "#8FD4FF"
-TRACK_UNCONFIRMED = "#5A6578"
-TRACK_TRAIL = "#3D6F99"
+ELEVATION_CMAP = LinearSegmentedColormap.from_list(
+    "orbit_elevation",
+    ["#3B6BFF", "#19D0E0", "#3EE89A", "#F4E14C", "#FF8E24", "#FF4E3A"],
+)
+
+TRACK_CONFIRMED = "#9AE7FF"
+TRACK_UNCONFIRMED = "#4B5568"
+TRACK_TRAIL = "#2F5F88"
 
 
 def proposal_color(classification: str) -> str:

@@ -1,15 +1,8 @@
 """
-ORBIT Visual Intelligence Dashboard V2.
+ORBIT Visual Intelligence Dashboard V3.
 
-Consumes a sequence of real PipelineState objects. Does not rerun
-ground estimation, grid construction, or detection.
-
-Two coordinate systems:
-
-    LIVE LiDAR SENSOR  — current scan in the current LiDAR frame
-                         (sensor at the origin).
-    GLOBAL WORLD MODEL — LiDAR frame 0. Ego trajectory from KITTI
-                         poses (or identity if no odometry).
+Consumes real PipelineState objects only. Does not rerun perception.
+Hero panels: live ego LiDAR (current frame) and world map (LiDAR frame 0).
 """
 
 from pathlib import Path
@@ -18,9 +11,8 @@ from typing import Optional, Sequence
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.collections import PatchCollection
-from matplotlib.gridspec import GridSpec
-from matplotlib.lines import Line2D
-from matplotlib.patches import Rectangle
+from matplotlib.gridspec import GridSpec, GridSpecFromSubplotSpec
+from matplotlib.patches import FancyBboxPatch, Rectangle
 
 from visualization.color_schemes import (
     ACCENT,
@@ -33,8 +25,10 @@ from visualization.color_schemes import (
     EGO,
     EGO_FILL,
     ELEVATION_CMAP,
+    LIVE_DOT,
     MUTED,
     PANEL,
+    PROPOSAL_COLORS,
     START,
     TERRAIN_GROUND,
     TERRAIN_NON_GROUND,
@@ -44,89 +38,89 @@ from visualization.color_schemes import (
     TRACK_UNCONFIRMED,
     TRAJECTORY,
     TRAJECTORY_MARK,
+    proposal_color,
 )
 from visualization.dashboard_data import (
     MAX_CELL_PATCHES,
     MAX_LIDAR_POINTS,
-    MAX_TRACK_LIST,
     accumulated_world_cloud,
     cell_records,
     class_patches,
+    compact_count,
     elevation_patches,
     extract_headings,
     extract_trajectory,
-    pose_source_of,
+    pose_caption,
     select_track_labels,
+    source_badge,
     subsample_indices,
     subsample_records,
     terrain_point_labels,
+    track_class_counts,
     track_trails,
-    world_to_ego_xy,
+    travel_metres,
+    xy_bounds,
 )
 
 
-CELL_FACE = {
-    0: CELL_GROUND,
-    1: CELL_MIXED,
-    2: CELL_OBSTACLE,
-}
+CELL_FACE = {0: CELL_GROUND, 1: CELL_MIXED, 2: CELL_OBSTACLE}
+
+FIGSIZE = (22.0, 13.2)
+FIGDPI = 120
 
 
-def _style_axes(ax, title, three_d=False):
+def _chrome(ax, three_d=False):
     ax.set_facecolor(PANEL)
-    ax.set_title(title, color=TEXT, fontsize=11, pad=9, loc="left", fontweight="bold")
-    ax.tick_params(colors=MUTED, labelsize=7)
-    ax.grid(True, color=EDGE, linewidth=0.4, alpha=0.55)
+    ax.tick_params(colors=MUTED, labelsize=6, width=0.4)
+    ax.grid(True, color=EDGE, linewidth=0.35, alpha=0.45)
     for spine in ax.spines.values():
         spine.set_color(EDGE)
+        spine.set_linewidth(0.9)
     if three_d:
-        ax.xaxis.pane.fill = False
-        ax.yaxis.pane.fill = False
-        ax.zaxis.pane.fill = False
-        ax.xaxis.pane.set_edgecolor(EDGE)
-        ax.yaxis.pane.set_edgecolor(EDGE)
-        ax.zaxis.pane.set_edgecolor(EDGE)
-        ax.tick_params(axis="z", colors=MUTED, labelsize=7)
         ax.grid(False)
-    ax.set_xlabel(ax.get_xlabel(), color=MUTED, fontsize=8)
-    ax.set_ylabel(ax.get_ylabel(), color=MUTED, fontsize=8)
 
 
-def _panel_meta(ax, text):
+def _title_block(ax, title, subtitle):
+    ax.set_title("")
     ax.text(
-        0.01, 0.01, text,
-        transform=ax.transAxes,
-        color=MUTED,
-        fontsize=7,
-        va="bottom",
-        ha="left",
+        0.0, 1.045, title,
+        transform=ax.transAxes, color=TEXT, fontsize=11,
+        fontweight="bold", ha="left", va="bottom",
+    )
+    ax.text(
+        0.0, 1.012, subtitle,
+        transform=ax.transAxes, color=MUTED, fontsize=7.5,
+        ha="left", va="bottom",
     )
 
 
-def _vehicle_poly_xy(x, y, heading, length=3.6, width=1.7):
+def _vehicle_poly_xy(x, y, heading, length=4.2, width=1.9):
     c, s = np.cos(heading), np.sin(heading)
     hx, hy = length / 2.0, width / 2.0
     local = np.array(
-        [
-            [hx, hy],
-            [hx, -hy],
-            [-hx * 0.7, -hy],
-            [-hx, 0.0],
-            [-hx * 0.7, hy],
-        ],
+        [[hx, hy], [hx, -hy], [-hx * 0.65, -hy], [-hx, 0.0], [-hx * 0.65, hy]],
         dtype=np.float64,
     )
     rot = np.array([[c, -s], [s, c]])
     return local @ rot.T + np.array([x, y])
 
 
+def _set_equal_limits(ax, x0, x1, y0, y1):
+    ax.set_xlim(x0, x1)
+    ax.set_ylim(y0, y1)
+    ax.set_aspect("equal", adjustable="box")
+
+
 def _draw_live_lidar(ax, state, mode="elevation"):
     ax.cla()
-    points = np.asarray(state.points)
-    title = "LIVE LiDAR SENSOR\nCURRENT EGO FRAME"
+    _chrome(ax)
+    _title_block(ax, "LIVE LiDAR", "EGO-CENTRIC SENSOR VIEW")
+    ax.set_xlabel("X forward (m)", color=MUTED, fontsize=7)
+    ax.set_ylabel("Y (m)", color=MUTED, fontsize=7)
 
+    points = np.asarray(state.points)
     if len(points) == 0:
-        _style_axes(ax, title, three_d=True)
+        ax.text(0.5, 0.5, "No points", color=MUTED, ha="center", va="center", transform=ax.transAxes)
         return
 
     idx = subsample_indices(len(points), MAX_LIDAR_POINTS, seed=int(state.frame_index))
@@ -136,173 +130,165 @@ def _draw_live_lidar(ax, state, mode="elevation"):
     if mode == "terrain" and state.ground.mask is not None:
         labels = terrain_point_labels(state.ground.mask)[idx]
         colors = np.where(labels == 0, TERRAIN_GROUND, TERRAIN_NON_GROUND)
-        ax.scatter(x, y, z, c=list(colors), s=0.28, linewidths=0, alpha=0.72, depthshade=False)
-        meta = "RANSAC ground / non-ground"
+        ax.scatter(x, y, c=list(colors), s=5.2, linewidths=0, alpha=0.75, rasterized=True)
     else:
+        zspan = float(np.percentile(z, 97) - np.percentile(z, 3)) if len(z) else 0.0
+        colour = z if zspan >= 0.30 else np.hypot(x, y)
+        vmin, vmax = np.percentile(colour, 3), np.percentile(colour, 97)
+        if not np.isfinite(vmin) or vmin == vmax:
+            vmin, vmax = float(np.min(colour)), float(np.max(colour) + 1e-3)
         ax.scatter(
-            x, y, z,
-            c=z,
-            cmap=ELEVATION_CMAP,
-            s=0.28,
-            linewidths=0,
-            alpha=0.78,
-            depthshade=False,
-            vmin=np.percentile(z, 2) if len(z) else None,
-            vmax=np.percentile(z, 98) if len(z) else None,
+            x, y, c=colour, cmap=ELEVATION_CMAP, s=5.5, linewidths=0,
+            alpha=0.82, vmin=vmin, vmax=vmax, rasterized=True,
         )
-        meta = "elevation (sensor Z)"
 
-    T = getattr(state, "T_ego_to_world", None)
-    if T is not None:
-        for track in select_track_labels(state.tracks, max_labels=6, confirmed_only=True):
-            xy = world_to_ego_xy(np.asarray(track.position[:2], dtype=np.float64), T)
-            ax.scatter(
-                [xy[0]], [xy[1]], [0.4],
-                c=TRACK_CONFIRMED, s=18, zorder=9, depthshade=False,
+    for proposal in getattr(state, "proposals", []) or []:
+        cx, cy = proposal.center
+        color = proposal_color(proposal.classification)
+        ax.add_patch(
+            Rectangle(
+                (cx - proposal.width / 2.0, cy - proposal.length / 2.0),
+                proposal.width,
+                proposal.length,
+                fill=False,
+                edgecolor=color,
+                linewidth=0.9,
+                alpha=0.85,
+                zorder=5,
             )
+        )
 
-    ax.scatter([0], [0], [0], c=EGO, s=55, marker="o", zorder=10, depthshade=False)
-    ax.quiver(0, 0, 0, 5.0, 0.0, 0.0, color=EGO, arrow_length_ratio=0.18, linewidth=1.6)
+    poly = _vehicle_poly_xy(0.0, 0.0, 0.0, length=4.0, width=1.8)
+    ax.fill(poly[:, 0], poly[:, 1], color=EGO_FILL, zorder=8)
+    ax.plot(np.append(poly[:, 0], poly[0, 0]), np.append(poly[:, 1], poly[0, 1]), color=EGO, lw=1.6, zorder=9)
+    ax.annotate(
+        "",
+        xy=(6.5, 0.0),
+        xytext=(0.0, 0.0),
+        arrowprops=dict(arrowstyle="-|>", color=EGO, lw=1.8, mutation_scale=12),
+        zorder=10,
+    )
+    ax.scatter([0], [0], c=EGO, s=28, zorder=11, edgecolors=BG, linewidths=0.4)
 
-    ax.view_init(elev=24, azim=-72)
-    span = 35.0
-    ax.set_xlim(-span, span)
-    ax.set_ylim(-span, span)
-    ax.set_zlim(-4.0, 12.0)
-    ax.set_xlabel("X forward (m)")
-    ax.set_ylabel("Y (m)")
-    ax.set_zlabel("Z (m)")
-    _style_axes(ax, title, three_d=True)
-    ax.text2D(0.01, 0.02, f"sensor @ (0,0)  ·  {meta}", transform=ax.transAxes, color=MUTED, fontsize=7)
+    extras = [0.0, 6.5]
+    x0, x1, y0, y1 = xy_bounds(
+        np.concatenate([x, extras]),
+        np.concatenate([y, np.zeros_like(extras)]),
+        pad_frac=0.10,
+        min_span=18.0,
+    )
+    _set_equal_limits(ax, x0, x1, y0, y1)
 
 
 def _draw_world_map(ax, states, index):
     ax.cla()
-    state = states[index]
-    title = "GLOBAL WORLD MODEL\nLiDAR FRAME 0 REFERENCE"
+    _chrome(ax)
+    _title_block(ax, "GLOBAL WORLD MODEL", "LIDAR FRAME 0 REFERENCE")
+    ax.set_xlabel("X (m)", color=MUTED, fontsize=7)
+    ax.set_ylabel("Y (m)", color=MUTED, fontsize=7)
 
+    state = states[index]
     cloud = accumulated_world_cloud(states, index)
+    xs_fit, ys_fit = [], []
+
     if len(cloud):
         z = cloud[:, 2] if cloud.shape[1] >= 3 else np.zeros(len(cloud))
         ax.scatter(
             cloud[:, 0], cloud[:, 1],
-            c=z,
-            cmap=ELEVATION_CMAP,
-            s=0.22,
-            linewidths=0,
-            alpha=0.28,
-            zorder=1,
+            c=z, cmap=ELEVATION_CMAP, s=1.6, linewidths=0,
+            alpha=0.32, rasterized=True, zorder=1,
         )
+        xs_fit.append(cloud[:, 0])
+        ys_fit.append(cloud[:, 1])
 
     for trail in track_trails(state.world_objects):
-        ax.plot(trail[:, 0], trail[:, 1], color=TRACK_TRAIL, linewidth=1.0, alpha=0.7, zorder=4)
+        ax.plot(trail[:, 0], trail[:, 1], color=TRACK_TRAIL, linewidth=1.0, alpha=0.65, zorder=3)
 
-    confirmed = [t for t in state.tracks if t.confirmed]
-    for track in confirmed:
+    for track in state.tracks:
         px, py = float(track.position[0]), float(track.position[1])
-        ax.scatter(px, py, c=TRACK_CONFIRMED, s=22, zorder=6, linewidths=0)
+        color = TRACK_CONFIRMED if track.confirmed else TRACK_UNCONFIRMED
+        ax.scatter(px, py, c=color, s=26 if track.confirmed else 12, zorder=6, linewidths=0)
 
-    for track in select_track_labels(state.tracks, max_labels=6, confirmed_only=True):
+    labelled = select_track_labels(state.tracks, max_labels=6, confirmed_only=True)
+    for track in labelled:
+        cls = str(track.class_name).replace("VEHICLE-LIKE", "VEHICLE")
         ax.annotate(
-            f"#{track.track_id:03d}",
+            f"#{track.track_id:03d}\n{cls}",
             (float(track.position[0]), float(track.position[1])),
             color=TEXT,
-            fontsize=7,
-            xytext=(5, 4),
+            fontsize=6.5,
+            ha="left",
+            va="bottom",
+            xytext=(6, 5),
             textcoords="offset points",
             zorder=7,
         )
 
     traj = extract_trajectory(states, up_to=index)
     headings = extract_headings(states, up_to=index)
-    if len(traj) >= 1:
+    if len(traj):
+        xs_fit.append(traj[:, 0])
+        ys_fit.append(traj[:, 1])
         if len(traj) >= 2:
-            ax.plot(
-                traj[:, 0], traj[:, 1],
-                color=TRAJECTORY, linewidth=2.0, solid_capstyle="round", zorder=8,
-            )
-        ax.scatter(
-            traj[:, 0], traj[:, 1],
-            c=TRAJECTORY_MARK, s=12, zorder=9, linewidths=0, alpha=0.85,
-        )
-        ax.scatter(
-            [traj[0, 0]], [traj[0, 1]],
-            c=START, s=90, marker="o", zorder=11, edgecolors=BG, linewidths=0.6,
-        )
+            ax.plot(traj[:, 0], traj[:, 1], color=TRAJECTORY, linewidth=2.8, solid_capstyle="round", zorder=8)
+        ax.scatter(traj[:, 0], traj[:, 1], c=TRAJECTORY_MARK, s=10, zorder=9, linewidths=0, alpha=0.9)
+        ax.scatter([traj[0, 0]], [traj[0, 1]], c=START, s=110, marker="o", zorder=12, edgecolors=BG, linewidths=0.7)
         ax.annotate(
             "START",
             (traj[0, 0], traj[0, 1]),
-            color=START,
-            fontsize=8,
-            fontweight="bold",
-            xytext=(6, 8),
-            textcoords="offset points",
-            zorder=12,
+            color=START, fontsize=8, fontweight="bold",
+            xytext=(8, 10), textcoords="offset points", zorder=13,
         )
-
-        cx, cy = traj[-1]
+        cx, cy = float(traj[-1, 0]), float(traj[-1, 1])
         heading = float(headings[-1]) if len(headings) else 0.0
-        poly = _vehicle_poly_xy(cx, cy, heading)
-        ax.fill(poly[:, 0], poly[:, 1], color=EGO_FILL, zorder=12)
-        ax.plot(poly[:, 0], poly[:, 1], color=EGO, linewidth=1.4, zorder=13)
+        span = 20.0
+        if len(traj) >= 2:
+            span = max(12.0, float(np.linalg.norm(traj[-1] - traj[0])) * 0.08)
+        length = np.clip(span, 4.0, 9.0)
+        poly = _vehicle_poly_xy(cx, cy, heading, length=length, width=length * 0.42)
+        ax.fill(poly[:, 0], poly[:, 1], color=EGO_FILL, zorder=14)
+        ax.plot(np.append(poly[:, 0], poly[0, 0]), np.append(poly[:, 1], poly[0, 1]), color=EGO, lw=1.8, zorder=15)
         ax.annotate(
             "",
-            xy=(cx + 6.0 * np.cos(heading), cy + 6.0 * np.sin(heading)),
+            xy=(cx + length * 1.6 * np.cos(heading), cy + length * 1.6 * np.sin(heading)),
             xytext=(cx, cy),
-            arrowprops=dict(arrowstyle="-|>", color=CURRENT, lw=1.6),
-            zorder=14,
+            arrowprops=dict(arrowstyle="-|>", color=CURRENT, lw=1.8, mutation_scale=11),
+            zorder=16,
         )
         ax.annotate(
             "CURRENT",
             (cx, cy),
-            color=CURRENT,
-            fontsize=8,
-            fontweight="bold",
-            xytext=(8, -12),
-            textcoords="offset points",
-            zorder=14,
+            color=CURRENT, fontsize=8, fontweight="bold",
+            xytext=(10, -14), textcoords="offset points", zorder=16,
         )
 
-    ax.set_aspect("equal")
-    ax.autoscale()
-    ax.set_xlabel("X (m)")
-    ax.set_ylabel("Y (m)")
-    _style_axes(ax, title)
-    src = getattr(state, "pose_source", "unknown")
-    _panel_meta(ax, f"ego trajectory  ·  {src}")
-
-    legend = [
-        Line2D([0], [0], color=TRAJECTORY, linewidth=2, label="ego path"),
-        Line2D([0], [0], color=START, marker="o", linestyle="", label="start"),
-        Line2D([0], [0], color=EGO, marker="s", linestyle="", label="current"),
-        Line2D([0], [0], color=TRACK_CONFIRMED, marker="o", linestyle="", label="confirmed track"),
-    ]
-    ax.legend(
-        handles=legend,
-        loc="upper right",
-        fontsize=7,
-        framealpha=0.4,
-        facecolor=PANEL,
-        edgecolor=EDGE,
-        labelcolor=TEXT,
-    )
+    if xs_fit:
+        x0, x1, y0, y1 = xy_bounds(
+            np.concatenate(xs_fit),
+            np.concatenate(ys_fit),
+            pad_frac=0.16,
+            min_span=16.0,
+        )
+        _set_equal_limits(ax, x0, x1, y0, y1)
+    else:
+        _set_equal_limits(ax, -10, 10, -10, 10)
 
 
 def _add_cell_patches(ax, xs, ys, resolutions, facecolors_or_array, cmap=None, vmin=None, vmax=None):
+    xs = np.asarray(xs, dtype=np.float64)
+    ys = np.asarray(ys, dtype=np.float64)
+    resolutions = np.asarray(resolutions, dtype=np.float64)
+    span = max(float(np.ptp(xs) if len(xs) else 1.0), float(np.ptp(ys) if len(ys) else 1.0), 8.0)
+    floor = span / 220.0
     patches = []
     for x, y, r in zip(xs, ys, resolutions):
-        patches.append(Rectangle((x - r / 2.0, y - r / 2.0), r, r))
-    collection = PatchCollection(
-        patches,
-        linewidths=0.05,
-        edgecolors="none",
-        alpha=0.92,
-    )
+        draw = max(float(r), floor)
+        patches.append(Rectangle((x - draw / 2.0, y - draw / 2.0), draw, draw))
+    collection = PatchCollection(patches, linewidths=0.0, edgecolors="none", alpha=0.9)
     if cmap is not None:
         collection.set_cmap(cmap)
         collection.set_array(np.asarray(facecolors_or_array, dtype=np.float64))
-        if vmin is not None:
-            collection.set_clim(vmin, vmax)
+        collection.set_clim(vmin, vmax)
     else:
         collection.set_facecolor(list(facecolors_or_array))
     ax.add_collection(collection)
@@ -311,149 +297,160 @@ def _add_cell_patches(ax, xs, ys, resolutions, facecolors_or_array, cmap=None, v
 
 def _draw_elevation(ax, state, fig):
     ax.cla()
+    _chrome(ax)
+    _title_block(ax, "TERRAIN ELEVATION", "GROUND HEIGHT  (Z)")
+    ax.set_xlabel("X (m)", color=MUTED, fontsize=7)
+    ax.set_ylabel("Y (m)", color=MUTED, fontsize=7)
+
     records = subsample_records(cell_records(state.grid), MAX_CELL_PATCHES, seed=7)
     xs, ys, res, zs = elevation_patches(records)
-    title = "TERRAIN ELEVATION MODEL\nGROUND HEIGHT (Z)"
     if len(xs) == 0:
-        ax.text(0.5, 0.5, "No ground elevation cells", color=MUTED, ha="center", va="center", transform=ax.transAxes)
-        _style_axes(ax, title)
+        ax.text(0.5, 0.5, "No ground cells", color=MUTED, ha="center", va="center", transform=ax.transAxes)
         return
 
-    vmin, vmax = np.percentile(zs, 2), np.percentile(zs, 98)
-    if not np.isfinite(vmin) or vmin == vmax:
+    vmin, vmax = np.percentile(zs, 5), np.percentile(zs, 95)
+    if not np.isfinite(vmin) or abs(vmax - vmin) < 1e-6:
         vmin, vmax = float(np.min(zs)), float(np.max(zs) + 1e-3)
     coll = _add_cell_patches(ax, xs, ys, res, zs, cmap=ELEVATION_CMAP, vmin=vmin, vmax=vmax)
-    ax.set_aspect("equal")
-    ax.autoscale()
-    ax.set_xlabel("X (m)")
-    ax.set_ylabel("Y (m)")
-    _style_axes(ax, title)
-    cbar = fig.colorbar(coll, ax=ax, fraction=0.046, pad=0.03)
-    cbar.set_label("ground Z (m)", color=MUTED, fontsize=7)
-    cbar.ax.yaxis.set_tick_params(color=MUTED, labelsize=6)
-    plt.setp(cbar.ax.yaxis.get_ticklabels(), color=MUTED)
-    _panel_meta(ax, "AdaptiveCell.ground_elevation  ·  current ego grid")
+    x0, x1, y0, y1 = xy_bounds(xs, ys, pad_frac=0.05, min_span=6.0)
+    _set_equal_limits(ax, x0, x1, y0, y1)
+    cbar = fig.colorbar(coll, ax=ax, fraction=0.035, pad=0.02, shrink=0.82)
+    cbar.set_ticks([vmin, vmax])
+    cbar.set_ticklabels(["LOW", "HIGH"])
+    cbar.ax.tick_params(colors=MUTED, labelsize=6)
+    cbar.outline.set_edgecolor(EDGE)
 
 
 def _draw_terrain_class(ax, state):
     ax.cla()
+    _chrome(ax)
+    _title_block(ax, "TERRAIN STRUCTURE", "geometric class  ·  not learned drivability")
+    ax.set_xlabel("X (m)", color=MUTED, fontsize=7)
+    ax.set_ylabel("Y (m)", color=MUTED, fontsize=7)
+
     records = subsample_records(cell_records(state.grid), MAX_CELL_PATCHES, seed=8)
     xs, ys, res, codes = class_patches(records)
-    title = "TERRAIN STRUCTURE\nGEOMETRIC CELL CLASS"
     if len(xs) == 0:
-        ax.text(0.5, 0.5, "No occupied cells", color=MUTED, ha="center", va="center", transform=ax.transAxes)
-        _style_axes(ax, title)
+        ax.text(0.5, 0.5, "No cells", color=MUTED, ha="center", va="center", transform=ax.transAxes)
         return
 
     faces = [CELL_FACE[int(code)] for code in codes]
     _add_cell_patches(ax, xs, ys, res, faces)
-    ax.set_aspect("equal")
-    ax.autoscale()
-    ax.set_xlabel("X (m)")
-    ax.set_ylabel("Y (m)")
-    _style_axes(ax, title)
-    legend = [
-        Line2D([0], [0], color=CELL_GROUND, marker="s", linestyle="", label="GROUND"),
-        Line2D([0], [0], color=CELL_MIXED, marker="s", linestyle="", label="MIXED"),
-        Line2D([0], [0], color=CELL_OBSTACLE, marker="s", linestyle="", label="OBSTACLE"),
-    ]
-    ax.legend(
-        handles=legend,
-        loc="upper right",
-        fontsize=7,
-        framealpha=0.4,
-        facecolor=PANEL,
+    x0, x1, y0, y1 = xy_bounds(xs, ys, pad_frac=0.05, min_span=6.0)
+    _set_equal_limits(ax, x0, x1, y0, y1)
+
+
+def _card(ax, x, y, w, h, label, value):
+    box = FancyBboxPatch(
+        (x, y), w, h,
+        boxstyle="round,pad=0.008,rounding_size=0.02",
+        facecolor="#161C28",
         edgecolor=EDGE,
-        labelcolor=TEXT,
+        linewidth=0.7,
+        transform=ax.transAxes,
+        clip_on=False,
+        zorder=2,
     )
-    _panel_meta(ax, "AdaptiveCell.semantic_class  ·  not learned drivability")
-
-
-def _metric_block(ax, x, y, label, value, size=16):
-    ax.text(x, y, label, color=MUTED, fontsize=7, va="top", transform=ax.transAxes)
-    ax.text(x, y - 0.055, value, color=TEXT, fontsize=size, fontweight="bold", va="top", transform=ax.transAxes)
-
-
-def _draw_status(ax, state, sequence, source, frame_count):
-    ax.cla()
-    ax.set_xlim(0, 1)
-    ax.set_ylim(0, 1)
-    ax.axis("off")
-    ax.set_facecolor(PANEL)
-    ax.set_title("SYSTEM STATUS", color=TEXT, fontsize=11, loc="left", fontweight="bold", pad=8)
-    m = state.metrics
-    last = frame_count - 1 if frame_count else state.frame_index
-
-    _metric_block(ax, 0.04, 0.90, "FRAME", f"{state.frame_index} / {last}", 18)
-    _metric_block(ax, 0.52, 0.90, "LATENCY", f"{m.get('latency_ms', 0):.0f} ms", 16)
-    _metric_block(ax, 0.04, 0.68, "POINT CLOUD", f"{m.get('mapped_points', 0):,}", 15)
-    _metric_block(ax, 0.52, 0.68, "GROUND", f"{m.get('ground_points', 0):,}", 15)
-    _metric_block(ax, 0.04, 0.46, "TERRAIN GRID", f"{m.get('adaptive_cells', 0):,}", 15)
-    _metric_block(ax, 0.52, 0.46, "OBSTACLE CELLS", f"{m.get('obstacle_cells', 0):,}", 15)
-    _metric_block(ax, 0.04, 0.24, "PROPOSALS", str(m.get("proposals", 0)), 15)
-    _metric_block(ax, 0.52, 0.24, "SOURCE", f"{source} {sequence}", 12)
-
+    ax.add_patch(box)
     ax.text(
-        0.04, 0.05,
-        f"pose  {getattr(state, 'pose_source', 'unknown')}",
-        color=MUTED, fontsize=7, va="bottom", transform=ax.transAxes,
+        x + 0.04, y + h * 0.70, label, color=MUTED, fontsize=6.5, va="center",
+        transform=ax.transAxes, zorder=5, clip_on=False,
+    )
+    ax.text(
+        x + 0.04, y + h * 0.32, value, color=TEXT, fontsize=13, fontweight="bold", va="center",
+        transform=ax.transAxes, zorder=5, clip_on=False,
     )
 
 
-def _draw_tracking(ax, state):
+def _draw_status(ax, states, index):
     ax.cla()
     ax.set_xlim(0, 1)
     ax.set_ylim(0, 1)
     ax.axis("off")
     ax.set_facecolor(PANEL)
-    ax.set_title("TRACKING", color=TEXT, fontsize=11, loc="left", fontweight="bold", pad=8)
+    for spine in ax.spines.values():
+        spine.set_color(EDGE)
 
-    confirmed = [t for t in state.tracks if t.confirmed]
-    _metric_block(ax, 0.04, 0.92, "LIVE TRACKS", str(len(state.tracks)), 16)
-    _metric_block(ax, 0.38, 0.92, "CONFIRMED", str(len(confirmed)), 16)
-    _metric_block(ax, 0.70, 0.92, "WORLD OBJECTS", str(len(state.world_objects)), 14)
+    state = states[index]
+    m = state.metrics
+    last = max(s.frame_index for s in states)
+    travel = travel_metres(states, up_to=index)
+    confirmed = sum(1 for t in state.tracks if t.confirmed)
 
-    ax.text(0.04, 0.68, "TRACK", color=MUTED, fontsize=7, transform=ax.transAxes)
-    ax.text(0.28, 0.68, "CLASS", color=MUTED, fontsize=7, transform=ax.transAxes)
-    ax.text(0.70, 0.68, "HITS", color=MUTED, fontsize=7, transform=ax.transAxes)
+    ax.text(0.04, 0.965, "SYSTEM", color=TEXT, fontsize=10, fontweight="bold", va="top", transform=ax.transAxes)
 
-    rows = select_track_labels(state.tracks, max_labels=MAX_TRACK_LIST, confirmed_only=True)
-    if not rows:
-        rows = select_track_labels(state.tracks, max_labels=MAX_TRACK_LIST)
-    if not rows:
-        ax.text(0.04, 0.58, "No live tracks", color=MUTED, fontsize=9, transform=ax.transAxes)
+    cards = [
+        ("FRAME", f"{state.frame_index} / {last}"),
+        ("TRAVEL", f"{travel:.1f} m"),
+        ("LATENCY", f"{float(m.get('latency_ms', 0)):.0f} ms"),
+        ("POINTS", compact_count(m.get("mapped_points", 0))),
+        ("GROUND", compact_count(m.get("ground_points", 0))),
+        ("CELLS", compact_count(m.get("adaptive_cells", 0))),
+        ("OBSTACLE", compact_count(m.get("obstacle_cells", 0))),
+        ("PROPOSALS", str(int(m.get("proposals", 0)))),
+    ]
+
+    cols, w, h, gap_x, gap_y = 2, 0.45, 0.125, 0.03, 0.016
+    x0, y0 = 0.04, 0.82
+    for i, (lab, val) in enumerate(cards):
+        c = i % cols
+        r = i // cols
+        _card(ax, x0 + c * (w + gap_x), y0 - r * (h + gap_y), w, h, lab, val)
+
+    ax.text(0.04, 0.20, f"LIVE  {len(state.tracks)}", color=ACCENT, fontsize=10, fontweight="bold", transform=ax.transAxes)
+    ax.text(0.52, 0.20, f"CONFIRMED  {confirmed}", color=TRACK_CONFIRMED, fontsize=10, fontweight="bold", transform=ax.transAxes)
+
+    counts = track_class_counts(state.tracks)
+    bar_top = 0.145
+    ax.text(0.04, bar_top + 0.03, "CLASS MIX", color=MUTED, fontsize=6.5, transform=ax.transAxes)
+    if not counts:
         return
-
-    y = 0.60
-    for track in rows:
-        color = TRACK_CONFIRMED if track.confirmed else TRACK_UNCONFIRMED
-        ax.text(0.04, y, f"#{track.track_id:03d}", color=color, fontsize=9, family="monospace", transform=ax.transAxes)
-        ax.text(0.28, y, str(track.class_name), color=TEXT, fontsize=9, family="monospace", transform=ax.transAxes)
-        ax.text(0.70, y, str(track.hits), color=TEXT, fontsize=9, family="monospace", transform=ax.transAxes)
-        y -= 0.07
+    max_n = max(n for _, n in counts) or 1
+    y = bar_top - 0.01
+    for name, n in counts[:4]:
+        color = PROPOSAL_COLORS.get(name, TRACK_CONFIRMED)
+        ax.text(0.04, y, name.replace("VEHICLE-LIKE", "VEHICLE"), color=MUTED, fontsize=6, va="center", transform=ax.transAxes)
+        ax.add_patch(
+            Rectangle((0.38, y - 0.012), 0.50 * (n / max_n), 0.024, transform=ax.transAxes, facecolor=color, edgecolor="none", clip_on=False)
+        )
+        ax.text(0.90, y, str(n), color=TEXT, fontsize=6.5, va="center", ha="right", transform=ax.transAxes)
+        y -= 0.038
 
 
 def _draw_timeline(ax, states, current_index):
     ax.cla()
-    ax.set_facecolor(PANEL)
+    _chrome(ax)
+    _title_block(ax, "FRAME TIMELINE", "LIVE  ·  CONFIRMED")
     frames = [s.frame_index for s in states]
     live = [s.metrics.get("live_tracks", 0) for s in states]
     conf = [s.metrics.get("confirmed_tracks", 0) for s in states]
-    ax.plot(frames, live, color=ACCENT, linewidth=1.6, label="live")
-    ax.plot(frames, conf, color=TRACK_CONFIRMED, linewidth=1.4, linestyle="--", label="confirmed")
-    ax.scatter(frames, live, c=ACCENT, s=16, zorder=3)
+    ax.fill_between(frames, live, color=ACCENT, alpha=0.12)
+    ax.plot(frames, live, color=ACCENT, linewidth=2.0, label="live")
+    ax.plot(frames, conf, color=TRACK_CONFIRMED, linewidth=1.6, label="confirmed")
     cur = states[current_index].frame_index
-    ax.axvline(cur, color=CURRENT, linestyle="-", linewidth=1.0, alpha=0.85)
-    ax.set_xlabel("frame", color=MUTED, fontsize=8)
-    ax.set_ylabel("tracks", color=MUTED, fontsize=8)
-    _style_axes(ax, "FRAME TIMELINE")
-    ax.legend(
-        loc="upper right",
-        fontsize=7,
-        framealpha=0.35,
-        facecolor=PANEL,
-        edgecolor=EDGE,
-        labelcolor=TEXT,
+    ax.axvline(cur, color=CURRENT, linewidth=1.4, alpha=0.9)
+    ax.scatter([cur], [live[current_index]], c=LIVE_DOT, s=36, zorder=5, edgecolors=BG, linewidths=0.4)
+    if frames:
+        ax.annotate("START", (frames[0], live[0]), color=START, fontsize=7, xytext=(0, 8), textcoords="offset points", ha="left")
+        ax.annotate("CURRENT", (cur, live[current_index]), color=CURRENT, fontsize=7, xytext=(6, 8), textcoords="offset points")
+    ax.set_xlabel("frame", color=MUTED, fontsize=7)
+    ax.set_ylabel("tracks", color=MUTED, fontsize=7)
+    ax.legend(loc="upper right", fontsize=7, frameon=False, labelcolor=TEXT)
+
+
+def _draw_header(fig, state, states, index, source, sequence):
+    last = max(s.frame_index for s in states)
+    travel = travel_metres(states, up_to=index)
+    fig.text(0.045, 0.975, "ORBIT", color=EGO, fontsize=22, fontweight="bold", va="top", ha="left")
+    fig.text(0.045, 0.948, "Autonomous Terrain Intelligence", color=TEXT, fontsize=11, va="top", ha="left")
+    fig.text(0.045, 0.924, source_badge(source, sequence), color=MUTED, fontsize=8.5, va="top", ha="left")
+
+    fig.text(0.98, 0.975, f"FRAME  {state.frame_index}  /  {last}", color=TEXT, fontsize=14, fontweight="bold", va="top", ha="right")
+    fig.text(0.98, 0.948, "●  PROCESSING", color=LIVE_DOT, fontsize=10, va="top", ha="right")
+    fig.text(
+        0.98, 0.924,
+        f"REF  {pose_caption(getattr(state, 'pose_source', ''))}    TRAVEL  {travel:.1f} m",
+        color=MUTED, fontsize=8.5, va="top", ha="right",
     )
 
 
@@ -467,8 +464,6 @@ def render_dashboard(
     save_path: Optional[str] = None,
     fig=None,
 ):
-    """Draw one dashboard page for states[index] (real PipelineState only)."""
-
     if not states:
         raise ValueError("render_dashboard requires at least one PipelineState")
 
@@ -479,88 +474,45 @@ def render_dashboard(
 
     created = fig is None
     if fig is None:
-        fig = plt.figure(figsize=(20.5, 12.4), dpi=110, facecolor=BG)
+        fig = plt.figure(figsize=FIGSIZE, dpi=FIGDPI, facecolor=BG)
 
     fig.clear()
     fig.patch.set_facecolor(BG)
     gs = GridSpec(
-        3, 3,
+        3, 2,
         figure=fig,
-        height_ratios=[1.28, 1.05, 0.78],
-        width_ratios=[1.18, 1.18, 0.82],
-        hspace=0.42,
-        wspace=0.28,
-        left=0.04,
+        height_ratios=[2.42, 1.12, 1.02],
+        width_ratios=[1.0, 1.0],
+        hspace=0.38,
+        wspace=0.22,
+        left=0.045,
         right=0.985,
-        top=0.88,
-        bottom=0.09,
+        top=0.875,
+        bottom=0.085,
+    )
+    bottom = GridSpecFromSubplotSpec(
+        1, 5, subplot_spec=gs[2, :], wspace=0.28, width_ratios=[1.15, 1.15, 1.15, 0.95, 0.95],
     )
 
-    fig.text(
-        0.04, 0.965,
-        "ORBIT",
-        color=EGO,
-        fontsize=18,
-        fontweight="bold",
-        ha="left",
-        va="top",
-    )
-    fig.text(
-        0.04, 0.932,
-        "AUTONOMOUS TERRAIN INTELLIGENCE SYSTEM",
-        color=TEXT,
-        fontsize=12,
-        ha="left",
-        va="top",
-    )
-    fig.text(
-        0.04, 0.905,
-        "LIVE PERCEPTION   ·   GLOBAL MAPPING   ·   TERRAIN ANALYSIS"
-        "     geometric prototype  ·  no learned semantics",
-        color=MUTED,
-        fontsize=8,
-        ha="left",
-        va="top",
-    )
-    fig.text(
-        0.985, 0.965,
-        f"{source.upper()}  {sequence}    frame {state.frame_index}",
-        color=TEXT,
-        fontsize=11,
-        ha="right",
-        va="top",
-    )
-    fig.text(
-        0.985, 0.932,
-        pose_source_of(states[: index + 1]),
-        color=MUTED,
-        fontsize=8,
-        ha="right",
-        va="top",
-    )
+    _draw_header(fig, state, states, index, source, sequence)
 
-    ax_live = fig.add_subplot(gs[0, 0], projection="3d")
+    ax_live = fig.add_subplot(gs[0, 0])
     ax_world = fig.add_subplot(gs[0, 1])
-    ax_status = fig.add_subplot(gs[0, 2])
     ax_el = fig.add_subplot(gs[1, 0])
     ax_cls = fig.add_subplot(gs[1, 1])
-    ax_trk = fig.add_subplot(gs[1, 2])
-    ax_time = fig.add_subplot(gs[2, :])
-
-    for panel in (ax_world, ax_status, ax_el, ax_cls, ax_trk, ax_time):
-        panel.set_facecolor(PANEL)
+    ax_time = fig.add_subplot(bottom[0, :3])
+    ax_stat = fig.add_subplot(bottom[0, 3:])
 
     _draw_live_lidar(ax_live, state, mode=lidar_mode)
     _draw_world_map(ax_world, states, index)
-    _draw_status(ax_status, state, sequence, source, len(states))
     _draw_elevation(ax_el, state, fig)
     _draw_terrain_class(ax_cls, state)
-    _draw_tracking(ax_trk, state)
     _draw_timeline(ax_time, states, index)
+    _draw_status(ax_stat, states, index)
 
     if save_path:
         Path(save_path).parent.mkdir(parents=True, exist_ok=True)
-        fig.savefig(save_path, facecolor=fig.get_facecolor(), bbox_inches="tight")
+        fig.savefig(save_path, facecolor=fig.get_facecolor(), dpi=FIGDPI)
 
     if show:
         plt.show()
@@ -577,11 +529,9 @@ def launch_dashboard(
     lidar_mode: str = "elevation",
     show: bool = True,
 ):
-    """Interactive slider over already processed pipeline states."""
-
     from matplotlib.widgets import Slider
 
-    fig = plt.figure(figsize=(20.5, 12.4), dpi=110, facecolor=BG)
+    fig = plt.figure(figsize=FIGSIZE, dpi=FIGDPI, facecolor=BG)
 
     def draw(index):
         render_dashboard(
@@ -594,15 +544,10 @@ def launch_dashboard(
             fig=fig,
         )
         if len(states) > 1:
-            slider_ax = fig.add_axes([0.22, 0.018, 0.56, 0.028], facecolor=PANEL)
+            slider_ax = fig.add_axes([0.18, 0.018, 0.50, 0.024], facecolor=PANEL)
             slider = Slider(
-                slider_ax,
-                "Frame",
-                0,
-                len(states) - 1,
-                valinit=int(index),
-                valstep=1,
-                color=ACCENT,
+                slider_ax, "FRAME", 0, len(states) - 1,
+                valinit=int(index), valstep=1, color=ACCENT,
             )
             slider.label.set_color(TEXT)
             slider.valtext.set_color(TEXT)
@@ -610,7 +555,6 @@ def launch_dashboard(
             fig._orbit_slider = slider
 
     draw(len(states) - 1)
-
     if show:
         plt.show()
     return fig
@@ -629,13 +573,8 @@ def save_dashboard_frames(
     for i, state in enumerate(states):
         path = output_dir / f"orbit_dashboard_{source}_{sequence}_{state.frame_index:06d}.png"
         fig = render_dashboard(
-            states,
-            index=i,
-            sequence=sequence,
-            source=source,
-            lidar_mode=lidar_mode,
-            show=False,
-            save_path=str(path),
+            states, index=i, sequence=sequence, source=source,
+            lidar_mode=lidar_mode, show=False, save_path=str(path),
         )
         plt.close(fig)
         paths.append(path)
