@@ -114,13 +114,13 @@ def main():
 
     grid = AdaptiveGrid()
 
-    mapped_points = grid.build(
+    grid.build(
         points,
         ground_mask
     )
 
     print(
-        f"Mapped points: {mapped_points:,}"
+        f"Mapped points: {grid.mapped_points:,}"
     )
 
     print(

@@ -16,41 +16,24 @@ def create_cell_boxes(grid):
     """
     Convert occupied adaptive cells into
     small 3D boxes for visualization.
+
+    AdaptiveGrid keys are Cartesian (level, ix, iy).
+    Box XY matches AdaptiveCell.center.
     """
 
     boxes = []
 
-    for (ring_id, radial_bin, sector), cell in grid.cells.items():
+    for cell in grid.cells.values():
 
         resolution = cell.resolution
+        x, y = cell.center
 
-        # Ring information
-        r_min = grid.rings[ring_id][0]
+        z = 0.0
 
-        # Approximate radial position
-        r = (
-            r_min +
-            (radial_bin + 0.5) * resolution
-        )
-
-        # Reconstruct approximate angular position
-        radius = max(r, resolution)
-
-        angular_width = resolution / radius
-
-        theta = (
-            sector + 0.5
-        ) * angular_width
-
-        # Convert polar → Cartesian
-        x = r * np.cos(theta)
-        y = r * np.sin(theta)
-
-        # Height
-        if hasattr(cell, "z_min"):
-            z = cell.z_mean
-        else:
-            z = 0
+        if cell.point_count > 0:
+            mean_z = cell.z_mean
+            if np.isfinite(mean_z):
+                z = float(mean_z)
 
         # Create a small box representing the cell
         box = o3d.geometry.TriangleMesh.create_box(
