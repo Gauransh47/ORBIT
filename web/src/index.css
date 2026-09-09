@@ -1,0 +1,50 @@
+@import "tailwindcss";
+
+@theme {
+  --color-orbit-bg: #07090e;
+  --color-orbit-panel: #10141c;
+  --color-orbit-line: #1e2736;
+  --color-orbit-cyan: #3ddcff;
+  --color-orbit-dim: #7d8899;
+  --color-orbit-text: #e7eef6;
+  --color-orbit-ground: #2fbf9a;
+  --color-orbit-warn: #e08a3c;
+  --color-orbit-alert: #e05656;
+  --font-sans: "Segoe UI", "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", monospace;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+  margin: 0;
+  background: #07090e;
+  color: #e7eef6;
+  overflow-x: hidden;
+}
+
+body {
+  font-family: var(--font-sans);
+}
+
+::selection {
+  background: rgba(61, 220, 255, 0.28);
+}
+
+a:focus-visible,
+button:focus-visible {
+  outline: 2px solid #3ddcff;
+  outline-offset: 3px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
