@@ -16,7 +16,7 @@ are never described as finished unless they exist in the code.
 | [Development](development.md) | Setup, how to run scripts, tests, conventions |
 | [Dashboard](dashboard.md) | Visual Intelligence dashboard (real pipeline outputs) |
 | [nuScenes](nuscenes.md) | v1.0-mini LIDAR_TOP adapter (external dataset) |
-| [Website](web.md) | Separate React/Vite presentation layer (Phase 1) |
+| [Website](web.md) | React/Vite visualization client (Phases 1–9) |
 
-There is no packaged Python distribution and no root README.
-Application code lives under `src/`.
+Application code lives under `src/`. The website lives under `web/`.
+The root [README.md](../README.md) is the SIH-oriented project overview.

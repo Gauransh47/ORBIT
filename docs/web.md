@@ -525,4 +525,13 @@ This repository is a **prototype / proof-of-concept** toward the intended
 DRDO/iDEX system. PointNet++ and sparse CNN semantic perception are
 **planned future work**, not present in the Python pipeline or the website.
 
+# Phase 9 — Final polish and submission organization
+
+- Interactive Demo adaptive grid uses the same cool terrain / warm obstacle
+  palette as `/map`, Lambert lighting, and `MAX_RENDER_CELLS` sampling.
+- Object inspector shows only exported track fields; object ID labels are
+  optional.
+- Root `README.md`, `assets/screenshots`, and PPT/video placeholders for SIH
+  review. Python pipeline unchanged.
+
 
