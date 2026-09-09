@@ -77,8 +77,8 @@ Do not invent metrics in the demo once JSON exists.
   ORBIT runtime planner.
 - `/map` and `/planning` overlay chrome scrolls so controls stay reachable.
 - Honest export metrics (counts and ratios) appear only when JSON fields exist.
-- `web/public/data/**/*.json` (except `datasets.json`) is not committed; copy
-  from `exported_data/`.
+- `web/public/data/**/*.json` (except `datasets.json` and `scene-fixture`) is
+  not committed; copy from `exported_data/` or host via `VITE_ORBIT_DATA_URL`.
 - SemanticKITTI stays listed as “Not exported yet” until JSON exists.
 - PointNet++ / sparse CNN perception is **not** implemented in this prototype.
 
@@ -537,11 +537,44 @@ DRDO/iDEX system. PointNet++ and sparse CNN semantic perception are
 ## Public website deployment
 
 Vercel **Root Directory** is `web`. Build: `npm run build`. Output: `dist`.
-No environment variables. SPA fallback is `web/vercel.json`.
+SPA fallback is `web/vercel.json`.
 
-Large frame JSON is gitignored. A public site may include only
+Large frame JSON is gitignored. A public site always includes
 `datasets.json` and the small `scene-fixture` export. Other collections
-remain “Not exported yet” until JSON is copied locally or hosted separately.
+are **Not exported yet** unless JSON is copied into `web/public/data/`
+for local use, or hosted externally.
+
+### `VITE_ORBIT_DATA_URL`
+
+Optional **Vite build-time** variable (Vercel → Project → Settings →
+Environment Variables). Example: `https://your-dataset-host.example.com/orbit-data`.
+
+When set, registry and collection probes use `${VITE_ORBIT_DATA_URL}/<path>`
+first, then same-origin `/data/<path>` so `scene-fixture` on Vercel still
+loads if it was not uploaded to the host. Leave the variable empty for
+ordinary local `cd web && npm run dev` (files from `web/public/data/`).
+
+Upload the same tree the exporter already writes (see `datasets.json` `paths`):
+
+```text
+<host>/
+  datasets.json
+  scene-fixture/manifest.json
+  scene-fixture/trajectory.json
+  scene-fixture/frame_0000.json
+  …
+  nuscenes/scene-0061/manifest.json
+  nuscenes/scene-0061/frame_XXXX.json
+  synthetic/environment-01/…
+```
+
+Legacy probe paths (`scene-0061/`, `synthetic/`) remain valid if you upload
+those folders instead of the nested names.
+
+The host must send CORS allowing `https://orbit-bice-six.vercel.app` and
+`http://localhost:5173`. Provider-specific SDKs are not used; any static
+HTTPS JSON origin works. Redeploy after changing the env var.
+
 Do not commit 70+ MB synthetic frames.
 
 

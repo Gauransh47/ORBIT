@@ -2,6 +2,10 @@
 
 Runtime JSON. Not bundled into JavaScript.
 
+Vite serves **only** `web/public/` as the site root. Exports must live under
+`web/public/data/…` (URL `/data/…`) **or** on a static host configured with
+`VITE_ORBIT_DATA_URL` (same relative paths). See `web/README.md`.
+
 ## Registry
 
 `datasets.json` (committed) lists datasets and collection ids. Availability is

@@ -64,11 +64,67 @@ In the Vercel project:
 | Root directory | `web` |
 | Build command | `npm run build` |
 | Output directory | `dist` |
-| Environment variables | none |
+| Environment variables | optional `VITE_ORBIT_DATA_URL` (see below) |
 
 `vercel.json` rewrites unmatched routes to `index.html` (`/`, `/demo`, `/map`, `/planning`).
 
-Committed static data is only `public/data/datasets.json` plus the small `scene-fixture` export when present. Full scene JSON is gitignored. Collections without `manifest.json` show **Not exported yet**. To demo a full scene locally, copy exporter output into `public/data/` as above.
+Committed static data is only `public/data/datasets.json` plus the small `scene-fixture` export when present. Full scene JSON is gitignored.
+
+### Local `/data` (default)
+
+`npm run dev` / a Vercel build **without** `VITE_ORBIT_DATA_URL` fetches:
+
+```text
+/data/datasets.json
+/data/scene-fixture/manifest.json
+/data/nuscenes/scene-0061/…
+```
+
+from `web/public/data/`. Collections without a real `manifest.json` stay **Not exported yet**. Copy exporter output into `public/data/` as above for a full local scene.
+
+### Production: externally hosted exports
+
+To serve real gitignored exports in production, upload the **same directory layout** as `web/public/data/` to any static HTTPS host (R2, S3, Vercel Blob public URL, etc.). Then set a **build-time** env var on Vercel:
+
+| Name | Example |
+|------|---------|
+| `VITE_ORBIT_DATA_URL` | `https://your-dataset-host.example.com/orbit-data` |
+
+Vite inlines this at `npm run build`. After changing it, **redeploy**. Do not put credentials in this variable; the host must be publicly readable JSON.
+
+The client tries the external origin first, then same-origin `/data/…`, so `scene-fixture` on Vercel still works if it is not on the external host.
+
+Expected host layout (same paths as the exporter / `datasets.json`):
+
+```text
+<VITE_ORBIT_DATA_URL>/
+  datasets.json
+  scene-fixture/{manifest,trajectory,frame_*.json}
+  nuscenes/scene-0061/{manifest,trajectory,frame_*.json}
+  scene-0061/                          # legacy probe path
+  synthetic/environment-01/{manifest,trajectory,frame_*.json}
+  synthetic/                           # legacy probe path
+  semantic-kitti/sequence-00/…         # when exported
+```
+
+Each collection still needs `manifest.json` with a `files` array; frames are `frame_XXXX.json` listed there.
+
+### CORS
+
+The browser loads JSON with `fetch`. The dataset host must allow:
+
+- `https://orbit-bice-six.vercel.app`
+- `http://localhost:5173` (local `npm run dev` against a remote host)
+
+Typical headers:
+
+```text
+Access-Control-Allow-Origin: https://orbit-bice-six.vercel.app
+Access-Control-Allow-Methods: GET, HEAD
+Access-Control-Allow-Headers: Content-Type
+```
+
+For local + production, either list both origins or use a host that can echo the request `Origin` for those sites. No Vercel rewrite/proxy is required if CORS is set on the bucket/CDN.
 
 ## Stack
 

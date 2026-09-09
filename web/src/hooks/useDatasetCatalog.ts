@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
-import { fetchJson } from '../lib/fetchJson'
-import { candidateBaseUrls } from '../lib/dataPaths'
+import { fetchJson, fetchJsonFirst } from '../lib/fetchJson'
+import { candidateBaseUrls, dataFileUrl } from '../lib/dataPaths'
+import { candidateDataUrls } from '../lib/orbitDataUrl'
 import type {
   DatasetRegistryFile,
   DatasetSpec,
@@ -9,14 +10,12 @@ import type {
 } from '../types/datasets'
 import type { Manifest } from '../types/orbit'
 
-const REGISTRY_URL = '/data/datasets.json'
-
 async function resolveCollection(
   spec: DatasetSpec['collections'][number],
 ): Promise<ResolvedCollection> {
   for (const base of candidateBaseUrls(spec.paths)) {
     try {
-      const manifest = await fetchJson<Manifest>(`${base}/manifest.json`)
+      const manifest = await fetchJson<Manifest>(dataFileUrl(base, 'manifest.json'))
       if (Array.isArray(manifest.files)) {
         return { ...spec, available: true, baseUrl: base }
       }
@@ -38,7 +37,9 @@ export function useDatasetCatalog() {
       setLoading(true)
       setError(null)
       try {
-        const registry = await fetchJson<DatasetRegistryFile>(REGISTRY_URL)
+        const registry = await fetchJsonFirst<DatasetRegistryFile>(
+          candidateDataUrls('datasets.json'),
+        )
         const resolved: ResolvedDataset[] = []
         for (const ds of registry.datasets ?? []) {
           const collections: ResolvedCollection[] = []

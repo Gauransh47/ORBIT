@@ -242,11 +242,11 @@ Dataset-dependent pipeline commands: [docs/development.md](docs/development.md).
 | Root directory | `web` |
 | Build command | `npm run build` |
 | Output directory | `dist` |
-| Environment variables | none required |
+| Environment variables | optional `VITE_ORBIT_DATA_URL` (external JSON host; see `web/README.md`) |
 
 `web/vercel.json` rewrites unknown paths to `index.html` so `/demo`, `/map`, and `/planning` work as an SPA.
 
-A public deploy includes `datasets.json` and, if present, the small `scene-fixture` export. Large nuScenes / synthetic frames stay gitignored. Reviewers who need a full scene should run locally after copying JSON into `web/public/data/` as above.
+A public deploy includes `datasets.json` and, if present, the small `scene-fixture` export. Large nuScenes / synthetic frames stay gitignored. To show a full scene on Vercel, upload that export tree to a static HTTPS host and set `VITE_ORBIT_DATA_URL` (CORS required). Local copies still go in `web/public/data/`.
 
 ---
 
