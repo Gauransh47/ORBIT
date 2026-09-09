@@ -1,0 +1,54 @@
+{
+  "schema_version": 1,
+  "datasets": [
+    {
+      "id": "nuscenes",
+      "display_name": "nuScenes",
+      "description": "Urban autonomous driving LiDAR scenes",
+      "source": "nuscenes",
+      "collection_label": "scene",
+      "collections": [
+        {
+          "id": "scene-0061",
+          "label": "scene-0061",
+          "paths": ["nuscenes/scene-0061", "scene-0061"]
+        },
+        {
+          "id": "scene-fixture",
+          "label": "scene-fixture",
+          "paths": ["scene-fixture"]
+        }
+      ]
+    },
+    {
+      "id": "semantic-kitti",
+      "display_name": "SemanticKITTI",
+      "description": "Semantic LiDAR sequences",
+      "source": "kitti",
+      "collection_label": "sequence",
+      "status": "planned",
+      "collections": [
+        {
+          "id": "00",
+          "label": "sequence 00",
+          "paths": ["semantic-kitti/sequence-00", "kitti-00"]
+        }
+      ]
+    },
+    {
+      "id": "synthetic",
+      "display_name": "ORBIT Synthetic",
+      "description": "Controlled synthetic spatial environments",
+      "source": "synthetic",
+      "collection_label": "environment",
+      "status": "planned",
+      "collections": [
+        {
+          "id": "environment-01",
+          "label": "environment-01",
+          "paths": ["synthetic/environment-01", "synthetic"]
+        }
+      ]
+    }
+  ]
+}

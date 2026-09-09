@@ -151,11 +151,6 @@ export type FrameJson = {
   retired_ids?: number[]
 }
 
-export const DEFAULT_SCENE = 'scene-0061'
 export const DATA_PREFIX = '/data'
 export const FRAME_CACHE_LIMIT = 12
 export const PLAYBACK_MS = 450
-
-export function sceneDataUrl(sceneId: string, file: string): string {
-  return `${DATA_PREFIX}/${sceneId}/${file}`
-}

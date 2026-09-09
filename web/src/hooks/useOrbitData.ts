@@ -1,22 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { FrameCache } from '../lib/frameCache'
+import { fetchJson } from '../lib/fetchJson'
+import { dataFileUrl } from '../lib/dataPaths'
 import type { FrameJson, Manifest, TrajectoryFile } from '../types/orbit'
-import { DEFAULT_SCENE, sceneDataUrl } from '../types/orbit'
 
-async function fetchJson<T>(url: string): Promise<T> {
-  const response = await fetch(url)
-  if (!response.ok) {
-    throw new Error(`${response.status} ${response.statusText} for ${url}`)
-  }
-  return (await response.json()) as T
-}
-
-export function useOrbitData(sceneId = DEFAULT_SCENE) {
+export function useOrbitData(baseUrl: string | null) {
   const cacheRef = useRef(new FrameCache())
   const [manifest, setManifest] = useState<Manifest | null>(null)
   const [trajectory, setTrajectory] = useState<TrajectoryFile | null>(null)
   const [bootstrapError, setBootstrapError] = useState<string | null>(null)
-  const [bootstrapping, setBootstrapping] = useState(true)
+  const [bootstrapping, setBootstrapping] = useState(Boolean(baseUrl))
   const [frameIndex, setFrameIndex] = useState(0)
   const [frame, setFrame] = useState<FrameJson | null>(null)
   const [frameError, setFrameError] = useState<string | null>(null)
@@ -38,6 +31,7 @@ export function useOrbitData(sceneId = DEFAULT_SCENE) {
 
   const loadFrame = useCallback(
     async (index: number, fileName: string) => {
+      if (!baseUrl) return
       const request = ++requestRef.current
       const cached = cacheRef.current.get(index)
       if (cached) {
@@ -51,7 +45,7 @@ export function useOrbitData(sceneId = DEFAULT_SCENE) {
       setFromCache(false)
       setFrameError(null)
       try {
-        const json = await fetchJson<FrameJson>(sceneDataUrl(sceneId, fileName))
+        const json = await fetchJson<FrameJson>(dataFileUrl(baseUrl, fileName))
         if (request !== requestRef.current) return
         cacheRef.current.set(index, json)
         setFrame(json)
@@ -63,18 +57,25 @@ export function useOrbitData(sceneId = DEFAULT_SCENE) {
         if (request === requestRef.current) setFrameLoading(false)
       }
     },
-    [sceneId],
+    [baseUrl],
   )
 
   const bootstrap = useCallback(async () => {
+    if (!baseUrl) {
+      setBootstrapping(false)
+      setManifest(null)
+      setTrajectory(null)
+      setFrame(null)
+      return
+    }
     setBootstrapping(true)
     setBootstrapError(null)
     cacheRef.current = new FrameCache()
     try {
-      const man = await fetchJson<Manifest>(sceneDataUrl(sceneId, 'manifest.json'))
+      const man = await fetchJson<Manifest>(dataFileUrl(baseUrl, 'manifest.json'))
       let traj: TrajectoryFile | null = null
       try {
-        traj = await fetchJson<TrajectoryFile>(sceneDataUrl(sceneId, 'trajectory.json'))
+        traj = await fetchJson<TrajectoryFile>(dataFileUrl(baseUrl, 'trajectory.json'))
       } catch {
         traj = null
       }
@@ -92,7 +93,7 @@ export function useOrbitData(sceneId = DEFAULT_SCENE) {
     } finally {
       setBootstrapping(false)
     }
-  }, [loadFrame, sceneId])
+  }, [loadFrame, baseUrl])
 
   useEffect(() => {
     void bootstrap()
@@ -133,7 +134,7 @@ export function useOrbitData(sceneId = DEFAULT_SCENE) {
   }, [fileForIndex, frameIndex, loadFrame])
 
   return {
-    sceneId,
+    baseUrl,
     manifest,
     trajectory,
     bootstrapping,

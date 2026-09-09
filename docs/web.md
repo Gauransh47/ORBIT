@@ -213,7 +213,72 @@ cd web && npm run dev
 
 Open http://localhost:5173/demo
 
-Other scenes: `/demo?scene=<id>` → `/data/<id>/manifest.json`.
+# Phase 5 — Multi-dataset explorer
+
+The Interactive Demo is dataset-aware. It still only **visualizes** exported
+JSON.
+
+## Registry
+
+`web/public/data/datasets.json` describes datasets (`nuscenes`,
+`semantic-kitti`, `synthetic`) and their collections (scene / sequence /
+environment). The client probes each listed path for `manifest.json`. If the
+file is missing or is HTML (SPA fallback), the collection is **not available**.
+No placeholder detections are invented.
+
+## Directory layout
+
+Preferred:
+
+```
+web/public/data/datasets.json
+web/public/data/nuscenes/scene-0061/manifest.json
+web/public/data/semantic-kitti/sequence-00/…
+web/public/data/synthetic/environment-01/…
+```
+
+Legacy (still supported):
+
+```
+web/public/data/scene-0061/manifest.json
+```
+
+## URL
+
+```
+/demo?dataset=nuscenes&scene=scene-0061
+/demo?dataset=semantic-kitti&sequence=00
+/demo?dataset=synthetic&environment=environment-01
+```
+
+Legacy `/demo?scene=scene-0061` is rewritten to include `dataset` when the
+collection is found.
+
+Invalid dataset or scene → error state, no silent fallback.
+
+## Capabilities
+
+Inferred from the loaded frame + `trajectory.json` (and optional declared
+`capabilities` on a dataset in the registry):
+
+`has_points`, `has_world_points`, `has_trajectory`, `has_adaptive_grid`,
+`has_tracks`, `has_objects`, `has_proposals`, `has_semantic_labels`,
+`has_ground_data`, `has_path_data`.
+
+Unavailable view modes are disabled (e.g. Objects if no tracks/objects/proposals
+were exported).
+
+## Adding a dataset
+
+1. Export with `python -m web_export.export_orbit_data --source …`
+2. Copy JSON into `web/public/data/<dataset-id>/<collection-id>/`
+3. Add an entry to `datasets.json` with `paths` to probe
+4. Do not add fake frames
+
+SemanticKITTI later: `--source kitti`, folder `semantic-kitti/sequence-00`,
+`collection_label: sequence`. Synthetic later: `--source synthetic`,
+`synthetic/environment-01`.
+
 
 ## Data loading and cache
 

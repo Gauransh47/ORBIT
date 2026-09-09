@@ -1,36 +1,36 @@
-# Frontend scene data
+# Frontend exported data
 
-The explorer loads JSON at runtime from this folder. It does **not** bundle
-frames into the JavaScript build.
+Runtime JSON. Not bundled into JavaScript.
 
-## scene-0061 (default)
+## Registry
 
-Copy the Phase 3 export here:
+`datasets.json` (committed) lists datasets and collection ids. Availability is
+**probed** by fetching `manifest.json` — missing exports are “Not exported yet”.
 
-```text
-exported_data/scene-0061/manifest.json
-exported_data/scene-0061/trajectory.json
-exported_data/scene-0061/frame_0000.json
-…
-exported_data/scene-0061/frame_0019.json
-        ↓
+## Preferred layout
+
+```
+web/public/data/
+  datasets.json
+  nuscenes/scene-0061/{manifest,trajectory,frame_*.json}
+  semantic-kitti/sequence-00/…
+  synthetic/environment-01/…
+```
+
+## Backwards compatible (Phase 3/4)
+
+```
 web/public/data/scene-0061/
 ```
 
-From the repo root:
+still works. The registry lists both paths for scene-0061.
+
+## Copy nuScenes
 
 ```bash
+mkdir -p web/public/data/nuscenes/scene-0061
+cp exported_data/scene-0061/*.json web/public/data/nuscenes/scene-0061/
+# or legacy:
 mkdir -p web/public/data/scene-0061
-cp exported_data/scene-0061/manifest.json \
-   exported_data/scene-0061/trajectory.json \
-   exported_data/scene-0061/frame_*.json \
-   web/public/data/scene-0061/
+cp exported_data/scene-0061/*.json web/public/data/scene-0061/
 ```
-
-Then open `/demo`.
-
-JSON files are gitignored (they are large). This README is the placeholder.
-
-Optional other scene:
-
-`/demo?scene=your-scene-id` loads `/data/<id>/manifest.json`.

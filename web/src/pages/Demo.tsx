@@ -1,19 +1,23 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
+import DatasetExplorer from '../components/explorer/DatasetExplorer'
 import ExplorerScene from '../components/explorer/ExplorerScene'
 import FrameControls from '../components/explorer/FrameControls'
 import InformationPanel from '../components/explorer/InformationPanel'
 import LoadingState from '../components/explorer/LoadingState'
 import PipelineContext from '../components/explorer/PipelineContext'
 import ViewModeSelector from '../components/explorer/ViewModeSelector'
+import { findCollection, findDataset, useDatasetCatalog } from '../hooks/useDatasetCatalog'
 import { useOrbitData } from '../hooks/useOrbitData'
 import {
-  DEFAULT_SCENE,
-  PLAYBACK_MS,
-  type TrackRecord,
-  type ViewMode,
-  type WorldObjectRecord,
-} from '../types/orbit'
+  firstAvailableMode,
+  inferCapabilities,
+  modeAvailable,
+  modeUnavailableLabel,
+} from '../lib/capabilities'
+import { collectionIdFromParams, collectionQueryKey } from '../lib/dataPaths'
+import type { CollectionKind } from '../types/datasets'
+import { PLAYBACK_MS, type TrackRecord, type ViewMode, type WorldObjectRecord } from '../types/orbit'
 
 function pad(n: number): string {
   return String(n).padStart(2, '0')
@@ -56,40 +60,124 @@ function selectedDetails(
 function modeTitle(mode: ViewMode, frame: { points_frame?: string; world_points_frame?: string }) {
   if (mode === 'lidar') {
     return {
-      kicker: 'CURRENT LIDAR FRAME',
+      kicker: 'LIDAR POINT CLOUD',
       note: frame.points_frame ?? 'current_lidar',
     }
   }
   if (mode === 'world') {
     return {
-      kicker: 'WORLD FRAME — lidar_frame_0',
+      kicker: 'WORLD RECONSTRUCTION',
       note: frame.world_points_frame ?? 'lidar_frame_0',
     }
   }
   if (mode === 'grid') {
     return {
-      kicker: 'ADAPTIVE 2.5D TERRAIN MAP',
+      kicker: 'ADAPTIVE 2.5D GRID',
       note: 'Cells from this frame’s grid (current LiDAR XY). Geometric class GROUND / MIXED / OBSTACLE.',
     }
   }
   return {
-    kicker: 'OBJECTS & TRACKING',
+    kicker: 'TRACKED OBJECTS',
     note: 'Ground-plane footprints from exported XY and dimensions_xy. Not 3D bounding boxes.',
   }
 }
 
 export default function Demo() {
-  const [params] = useSearchParams()
-  const sceneId = params.get('scene')?.trim() || DEFAULT_SCENE
-  const data = useOrbitData(sceneId)
+  const [params, setSearchParams] = useSearchParams()
+  const catalog = useDatasetCatalog()
+  const datasetParam = params.get('dataset')?.trim() || null
+  const collectionParam = collectionIdFromParams(params)
+
+  const dataset = findDataset(catalog.datasets, datasetParam)
+  const collection = findCollection(dataset, collectionParam)
+
+  const selectionError = useMemo(() => {
+    if (catalog.loading || catalog.error) return null
+    if (datasetParam && !dataset) {
+      return `Unknown dataset “${datasetParam}”.`
+    }
+    if (collectionParam && dataset && !collection) {
+      return `Unknown ${dataset.collection_label} “${collectionParam}” for ${dataset.display_name}.`
+    }
+    if (collection && !collection.available) {
+      return `${collection.label} is listed but has no exported JSON on this deployment.`
+    }
+    return null
+  }, [catalog.error, catalog.loading, collection, collectionParam, dataset, datasetParam])
+
+  useEffect(() => {
+    if (catalog.loading || catalog.error) return
+    if (datasetParam || collectionParam) return
+    const firstDs = catalog.datasets.find((d) => d.available)
+    const firstCol = firstDs?.collections.find((c) => c.available)
+    if (!firstDs || !firstCol) return
+    const next = new URLSearchParams()
+    next.set('dataset', firstDs.id)
+    next.set(collectionQueryKey(firstDs.collection_label), firstCol.id)
+    setSearchParams(next, { replace: true })
+  }, [catalog.datasets, catalog.error, catalog.loading, collectionParam, datasetParam, setSearchParams])
+
+  useEffect(() => {
+    if (catalog.loading || catalog.error) return
+    if (!datasetParam || collectionParam) return
+    const ds = findDataset(catalog.datasets, datasetParam)
+    const first = ds?.collections.find((c) => c.available)
+    if (!ds || !first) return
+    const next = new URLSearchParams()
+    next.set('dataset', ds.id)
+    next.set(collectionQueryKey(ds.collection_label), first.id)
+    setSearchParams(next, { replace: true })
+  }, [catalog.datasets, catalog.error, catalog.loading, collectionParam, datasetParam, setSearchParams])
+
+  useEffect(() => {
+    if (catalog.loading || datasetParam || !collectionParam) return
+    for (const ds of catalog.datasets) {
+      const col = ds.collections.find((c) => c.id === collectionParam && c.available)
+      if (col) {
+        const next = new URLSearchParams()
+        next.set('dataset', ds.id)
+        next.set(collectionQueryKey(ds.collection_label), col.id)
+        setSearchParams(next, { replace: true })
+        return
+      }
+    }
+  }, [catalog.datasets, catalog.loading, collectionParam, datasetParam, setSearchParams])
+
+  const baseUrl = collection?.available ? collection.baseUrl : null
+  const data = useOrbitData(selectionError ? null : baseUrl)
   const [mode, setMode] = useState<ViewMode>('lidar')
   const [playing, setPlaying] = useState(false)
   const [showTrajectory, setShowTrajectory] = useState(true)
   const [selectedTrackId, setSelectedTrackId] = useState<number | null>(null)
 
+  const caps = useMemo(
+    () => inferCapabilities(data.frame, Boolean(data.trajectory?.samples?.length), dataset?.capabilities),
+    [data.frame, data.trajectory, dataset?.capabilities],
+  )
+  const availableModes = useMemo(
+    () => ({
+      lidar: modeAvailable('lidar', caps),
+      world: modeAvailable('world', caps),
+      grid: modeAvailable('grid', caps),
+      objects: modeAvailable('objects', caps),
+    }),
+    [caps],
+  )
+
+  useEffect(() => {
+    if (!modeAvailable(mode, caps) && data.frame) {
+      setMode(firstAvailableMode(caps))
+    }
+  }, [caps, data.frame, mode])
+
   useEffect(() => {
     setSelectedTrackId(null)
   }, [data.frameIndex])
+
+  useEffect(() => {
+    setPlaying(false)
+    setSelectedTrackId(null)
+  }, [baseUrl])
 
   useEffect(() => {
     if (!playing) return
@@ -133,7 +221,18 @@ export default function Demo() {
     return selectedDetails(track, world)
   }, [data.frame, selectedTrackId])
 
-  const copyHint = `Copy exported_data/${sceneId}/ into web/public/data/${sceneId}/ (manifest.json, trajectory.json, frame_*.json).`
+  const copyHint =
+    'Place exports under web/public/data/nuscenes/scene-0061/ or the legacy path web/public/data/scene-0061/.'
+
+  const onSelectDataset = (id: string, colId: string | null, kind: CollectionKind) => {
+    const next = new URLSearchParams()
+    next.set('dataset', id)
+    if (colId) next.set(collectionQueryKey(kind), colId)
+    setSearchParams(next)
+  }
+
+  const sceneLabel = collection?.label ?? collectionParam ?? '—'
+  const overlayError = selectionError || catalog.error
 
   return (
     <main className="mx-auto max-w-[1400px] px-4 pb-16 pt-24 md:px-8">
@@ -144,16 +243,25 @@ export default function Demo() {
             Interactive ORBIT Explorer
           </h1>
           <p className="mt-3 max-w-2xl text-sm leading-6 text-orbit-dim">
-            Playback of exported PipelineState from{' '}
-            <span className="text-orbit-text">{data.manifest?.scene_id ?? sceneId}</span>
-            . The browser does not run perception, mapping, or tracking.
+            Dataset-aware playback of exported PipelineState. The browser does not run
+            perception, mapping, or tracking.
           </p>
         </div>
         <p className="font-mono text-[11px] tracking-[0.22em] text-orbit-dim">
-          {(data.manifest?.scene_id ?? sceneId).toUpperCase()}
-          {data.manifest?.source ? ` · ${data.manifest.source}` : ''}
+          {(dataset?.display_name ?? datasetParam ?? '').toUpperCase()}
+          {sceneLabel !== '—' ? ` · ${sceneLabel}` : ''}
         </p>
       </header>
+
+      <div className="mt-8">
+        <DatasetExplorer
+          datasets={catalog.datasets}
+          loading={catalog.loading}
+          datasetId={datasetParam}
+          collectionId={collectionParam}
+          onSelect={onSelectDataset}
+        />
+      </div>
 
       <div className="mt-8 grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(16rem,19rem)] lg:items-stretch">
         <section className="relative h-[min(58vh,38rem)] min-h-[22rem] overflow-hidden rounded-[1.75rem] bg-[#0a1018] md:min-h-[28rem]">
@@ -164,30 +272,33 @@ export default function Demo() {
           <p className="pointer-events-none absolute bottom-4 left-5 z-10 font-mono text-[10px] tracking-[0.18em] text-orbit-dim">
             DRAG — ROTATE · SCROLL — ZOOM · RIGHT DRAG — PAN
           </p>
-          {data.bootstrapping || (data.frameLoading && !data.frame) ? (
+          {data.bootstrapping || (data.frameLoading && !data.frame && !overlayError) ? (
             <LoadingState label={`LOADING FRAME ${pad(data.frameIndex)}`} />
           ) : null}
-          {data.bootstrapError ? (
+          {overlayError ? (
+            <LoadingState label="UNABLE TO LOAD DATASET" error={overlayError} />
+          ) : null}
+          {data.bootstrapError && !overlayError ? (
             <LoadingState
               label="UNABLE TO LOAD SCENE"
               error={`${data.bootstrapError} ${copyHint}`}
               onRetry={() => void data.retryBootstrap()}
             />
           ) : null}
-          {data.frameError && !data.bootstrapError ? (
+          {data.frameError && !data.bootstrapError && !overlayError ? (
             <LoadingState
               label={`UNABLE TO LOAD FRAME ${pad(data.frameIndex)}`}
               error={data.frameError}
               onRetry={data.retryFrame}
             />
           ) : null}
-          {data.frame && !data.bootstrapError ? (
+          {data.frame && !data.bootstrapError && !overlayError ? (
             <div className={`absolute inset-0 ${data.frameLoading ? 'opacity-70' : ''}`}>
               <ExplorerScene
                 frame={data.frame}
                 mode={mode}
                 trajectory={data.trajectory}
-                showTrajectory={showTrajectory}
+                showTrajectory={showTrajectory && Boolean(caps.has_trajectory)}
                 selectedTrackId={selectedTrackId}
                 onSelectTrack={setSelectedTrackId}
               />
@@ -223,7 +334,7 @@ export default function Demo() {
             />
           ) : (
             <p className="text-sm leading-6 text-orbit-dim">
-              Waiting for exported JSON. {copyHint}
+              {overlayError ?? `Waiting for exported JSON. ${copyHint}`}
             </p>
           )}
         </div>
@@ -232,12 +343,18 @@ export default function Demo() {
       <div className="mt-6 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div>
           <p className="mb-3 font-mono text-[10px] tracking-[0.28em] text-orbit-dim">VIEW MODE</p>
-          <ViewModeSelector mode={mode} onChange={setMode} />
+          <ViewModeSelector mode={mode} onChange={setMode} available={availableModes} />
+          {!availableModes[mode] ? (
+            <p className="mt-2 text-xs text-orbit-dim">{modeUnavailableLabel(mode)}</p>
+          ) : null}
         </div>
-        <label className="flex items-center gap-3 text-sm text-orbit-dim">
+        <label
+          className={`flex items-center gap-3 text-sm ${caps.has_trajectory ? 'text-orbit-dim' : 'text-orbit-dim/40'}`}
+        >
           <input
             type="checkbox"
-            checked={showTrajectory}
+            checked={showTrajectory && Boolean(caps.has_trajectory)}
+            disabled={!caps.has_trajectory}
             onChange={(e) => setShowTrajectory(e.target.checked)}
             className="accent-orbit-cyan"
           />

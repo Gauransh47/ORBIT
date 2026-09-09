@@ -13,15 +13,4 @@ web/dist/
 exported_data/**/*.json
 exported_data/**/*.bin
 web/public/data/**/*.json
-.pytest_cache/
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
-.env
-.vscode/
-.idea/
-web/node_modules/
-web/dist/
-exported_data/**/*.json
-exported_data/**/*.bin
+!web/public/data/datasets.json
