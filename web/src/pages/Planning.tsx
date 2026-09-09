@@ -95,7 +95,7 @@ export default function Planning() {
   const hasGrid = cells.length > 0
   const sampled = cells.length > MAX_RENDER_CELLS
   const datasetNotExported = Boolean(dataset && !catalog.loading && !dataset.available && !overlayError)
-  const singleFrame = (data.indices?.length ?? 0) <= 1
+  const singleFrame = (data.indices?.length ?? 0) === 1
 
   const applyPick = (xy: [number, number], index: number | null) => {
     if (pickMode === 'start') {

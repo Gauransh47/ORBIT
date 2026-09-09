@@ -65,7 +65,7 @@ export default function MapExplorer() {
   const hasElevation = frameHasElevation(cells)
   const hasGrid = cells.length > 0
   const sampled = cells.length > MAX_RENDER_CELLS
-  const singleFrame = (data.indices?.length ?? 0) <= 1
+  const singleFrame = (data.indices?.length ?? 0) === 1
   const hasTrajectory = Boolean(data.trajectory?.samples?.length)
   const hasObjects = Boolean((data.frame?.tracks?.length ?? 0) + (data.frame?.world_objects?.length ?? 0))
   const hasWorldPoints = Boolean(data.frame?.world_points?.length)
