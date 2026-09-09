@@ -26,6 +26,8 @@ ORBIT/
     synthetic_scene.py   # writes data/synthetic_scene.ply
     ...
   tests/                 # pytest modules (src/ must be on PYTHONPATH)
+  web/                   # React / Vite site (separate from dashboard)
+  exported_data/         # JSON dumps for the website (not committed)
   data/                  # gitignored; not shipped
 ```
 

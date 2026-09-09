@@ -8,3 +8,7 @@ __pycache__/
 .env
 .vscode/
 .idea/
+web/node_modules/
+web/dist/
+exported_data/**/*.json
+exported_data/**/*.bin
