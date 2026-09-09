@@ -1,274 +1,212 @@
 # ORBIT
 
-**Adaptive Variable-Resolution 2.5D LiDAR Mapping for Dynamic Environment Perception**
+**Adaptive Variable Resolution 2.5D LiDAR Mapping for Dynamic Environment Perception**
 
-A prototype / proof-of-concept toward the intended **DRDO / iDEX** Smart Vehicles system.
+Prototype / proof-of-concept toward the intended DRDO / iDEX Smart Vehicles system.
 
-> This repository is prepared for NSUT internal SIH review. It is **not** a completed production autonomy stack. PointNet++ and Sparse CNN perception are **planned future work** and are **not implemented**.
-
----
-
-## Table of contents
-
-1. [Problem statement](#problem-statement)
-2. [Overview](#overview)
-3. [Key features](#key-features)
-4. [System architecture](#system-architecture)
-5. [Adaptive / foveated 2.5D representation](#adaptive--foveated-25d-representation)
-6. [Datasets](#datasets)
-7. [Web visualization](#web-visualization)
-8. [Path planning demonstration](#path-planning-demonstration)
-9. [Exported metrics](#exported-metrics)
-10. [Technology stack](#technology-stack)
-11. [Project structure](#project-structure)
-12. [Installation / running locally](#installation--running-locally)
-13. [Screenshots / demo](#screenshots--demo)
-14. [Documentation](#documentation)
-15. [Future work](#future-work)
-16. [Prototype disclaimer](#prototype-disclaimer)
+PointNet++ and Sparse CNN perception are **future work**. They are **not implemented**.
 
 ---
 
-## Problem statement
+## 1. Project information
 
-**Title:** Adaptive Variable Resolution 2.5D Lidar Mapping for Dynamic Environment Perception
+| | |
+|---|---|
+| **Project title** | ORBIT |
+| **Problem title** | Adaptive Variable Resolution 2.5D Lidar Mapping for Dynamic Environment Perception |
+| **Organization** | DRDO — Department of Defence Production / iDEX |
+| **Theme** | Smart Vehicles |
+| **Category** | Software |
+| **Status** | Prototype / proof-of-concept |
 
-**Organization:** DRDO — Department of Defence Production / iDEX  
-**Theme:** Smart Vehicles
+---
 
-Dense 3D LiDAR is rich but expensive to process; a flat 2D occupancy grid drops the height needed for curbs, potholes, terrain, and overhangs. The intended approach is **foveated mapping**: fine spatial detail near the vehicle, coarser cells farther away.
+## 2. Problem statement
+
+Dense 3D LiDAR gives rich spatial information but is computationally expensive. Traditional 2D occupancy maps drop height that matters for curbs, potholes, terrain, and overhangs.
+
+ORBIT explores a **foveated 2.5D** representation: higher spatial detail near the sensor, coarser cells farther away, while keeping elevation and geometric structure that a flat grid would lose.
 
 Official task directions:
 
-1. **Terrain analysis** — distinguish drivable vs non-drivable surfaces.
-2. **Object detection** — static obstacles and dynamic objects.
-3. **Adaptive spatial representation** — non-uniform resolution without silently inventing geometry.
-
-This prototype demonstrates the **adaptive 2.5D representation** and exported-data visualization. Learned semantic perception remains future work.
+1. Terrain analysis (drivable vs non-drivable surfaces)
+2. Object detection (static obstacles and dynamic objects)
+3. Adaptive spatial representation (non-uniform resolution)
 
 ---
 
-## Overview
+## 3. Overview
 
 ```text
-LiDAR-derived / exported environment data
+Dataset / LiDAR
         ↓
-Adaptive variable-resolution 2.5D grid
+ORBIT processing pipeline (Python)
         ↓
-Elevation + geometric semantic layers (GROUND / MIXED / OBSTACLE)
+PipelineState
         ↓
-Tracked object footprints (exported tracks / world objects)
+JSON export
         ↓
-Interactive web exploration
-        ↓
-Browser A* planning demonstration on exported occupancy
+Interactive web visualization
 ```
 
-The Python pipeline (`src/`) builds the grid geometrically (RANSAC ground, range rings, clustering, tracking). The website (`web/`) **does not re-run perception**. It loads JSON exports of `PipelineState`.
+The browser **does not** run perception, mapping, or tracking. It visualizes exported JSON.
 
 ---
 
-## Key features
+## 4. Current prototype
 
-Implemented in this repository:
+**Implemented / demonstrated**
 
-- Adaptive variable-resolution 2.5D mapping from LiDAR
-- Elevation-aware cells (`ground_elevation`, `z_mean`, `z_min` / `z_max` where present)
-- Geometric cell labels GROUND / MIXED / OBSTACLE (not a neural segmenter)
-- Multi-dataset architecture: nuScenes, SemanticKITTI, ORBIT Synthetic
-- Interactive Demo (`/demo`): LiDAR, world points, adaptive grid, objects
-- 2.5D Map (`/map`): terrain / semantic / resolution / obstacle views, foveation overlay
-- Tracked-object inspector from exported fields; optional object IDs
-- Browser A* on exported occupancy (`/planning`): Start → Destination → Locate path → path playback
-- Honest export metrics (counts and ratios only)
-- Matplotlib Visual Intelligence dashboard (Python; separate from the website)
+- LiDAR-derived environment processing (geometric)
+- Adaptive variable-resolution 2.5D grid
+- Elevation / terrain representation from exported cell fields
+- Obstacle representation (`semantic_class`, `obstacle_count`, `obstacle_cells`)
+- Tracking / object footprints from exported `tracks` and `world_objects`
+- Dataset-aware explorer (nuScenes, SemanticKITTI, ORBIT Synthetic)
+- Interactive Demo, 2.5D Map, and foveated-structure overlay
+- Website A* planning demonstration on exported occupancy
+- Metrics derived only from export counts
 
-Not claimed: PointNet++, Sparse CNN, official FPS/latency/accuracy, live vehicle control.
+**Not implemented**
+
+- PointNet++, Sparse CNN, or any learned LiDAR segmentation
+- Learned drivable-terrain classification
+- Production Python runtime planner
+- Live vehicle control
+- Official FPS / latency / memory / accuracy evaluation
 
 ---
 
-## System architecture
+## 5. Architecture
 
-```mermaid
-flowchart TD
-  A[Dataset loaders<br/>nuScenes / KITTI / synthetic] --> B[OrbitSystem.process_frame]
-  B --> C[Geometric perception<br/>RANSAC + clustering]
-  C --> D[AdaptiveGrid<br/>variable-resolution 2.5D]
-  D --> E[Tracker / world model]
-  E --> F[PipelineState]
-  F --> G[JSON export<br/>src/web_export]
-  F --> H[Matplotlib dashboard]
-  G --> I[React website<br/>visualisation only]
-  I --> J[Browser A* demo]
+```text
+nuScenes / SemanticKITTI / synthetic LiDAR
+        ↓
+OrbitSystem.process_frame
+        ↓
+Geometric perception (RANSAC, clustering) + AdaptiveGrid + tracker
+        ↓
+PipelineState
+        ├── Matplotlib dashboard (engineering console)
+        └── web_export → JSON
+                    ↓
+              React website (visualization only)
+                    ↓
+              Browser A* demonstration
 ```
 
-**Future work (not in this diagram as implemented stages):** PointNet++, Sparse CNN, learned terrain/object classification, production runtime planner.
-
-World coordinates are **LiDAR frame 0**, never nuScenes global.
+World frame is **LiDAR frame 0**, not nuScenes global.
 
 ---
 
-## Adaptive / foveated 2.5D representation
+## 6. Adaptive spatial representation
 
-ORBIT stores occupied space as cells whose **size comes from range rings in the Python mapper**. Fine cells carry higher spatial detail near the sensor; coarser cells cover farther ranges.
+The Python mapper bins occupied space into cells whose size grows with range (`src/mapping/adaptive_grid.py`). Fine cells carry higher spatial detail near the sensor; coarser cells cover farther ranges.
 
-The website does **not** assume fixed 10 m / 100 m rings unless those extents exist in the **exported cells**. The map overlay draws ego and rings at the **actual max range of each exported resolution**.
+The website draws the **exported** `resolution` values. Foveation rings use the **actual range extent** of each exported resolution around ego. Legends do not invent 10 m / 100 m radii unless those extents exist in the JSON.
 
-Typical rings in `src/mapping/adaptive_grid.py` (Python, when that mapper ran):
-
-| Ring | Horizontal range | Cell size |
-|------|------------------|-----------|
-| 0 | 0–10 m | 5 cm |
-| 1 | 10–25 m | 10 cm |
-| 2 | 25–50 m | 25 cm |
-| 3 | 50–100 m | 50 cm |
-
-Visualization legends always use the resolutions present in the current JSON.
+When the Python mapper ran with its default rings, cell sizes are 5 cm / 10 cm / 25 cm / 50 cm over 0–10 / 10–25 / 25–50 / 50–100 m. That is mapper configuration, not a performance claim.
 
 ---
 
-## Datasets
+## 7. Dynamic environment representation
 
-| Dataset | Architecture | Typical export status |
-|---------|--------------|------------------------|
-| **nuScenes** | Scene collections (`scene-0061`, …) | Available when JSON is copied to `web/public/data/nuscenes/…` |
-| **SemanticKITTI** | Sequence collections | Listed as *not exported yet* until JSON exists — the explorer will not invent a sequence |
-| **ORBIT Synthetic** | Environment collections | Often a **one-frame** export with a large adaptive grid (visualization is subsampled) |
+Exported tracks and world objects may include `track_id`, geometric `class_name`, `position`, `dimensions_xy`, `velocity_xy`, `motion_state`, hits, and related fields **when the pipeline wrote them**.
 
-Registry: `web/public/data/datasets.json`. Frame dumps are gitignored; copy from `exported_data/` for local/demo deployments.
+The website shows those fields in an object inspector and optional ID labels. It does not invent velocity, classes, or motion. `class_name` and `motion_state` are geometric/exported labels, not learned categories.
 
 ---
 
-## Web visualization
-
-| Route | Role |
-|-------|------|
-| `/` | Landing / problem framing |
-| `/demo` | Interactive Demo — exported LiDAR, grid, objects |
-| `/map` | Dedicated 2.5D adaptive grid explorer |
-| `/planning` | Browser A* demonstration |
-| `/pipeline`, `/about`, `/technology` | Honest system copy |
-
-Colour language (consistent across pages):
-
-- **Terrain / spatial data** — cool blue / cyan / teal
-- **Obstacles** — warm orange / amber
-- **Tracked objects** — distinct footprints; MOVING / STATIC colours only when `motion_state` is exported
-- **Ego** — cyan cone
-- **Path** — yellow polyline
-
----
-
-## Path planning demonstration
+## 8. Path planning demonstration
 
 ```text
 exported adaptive_cells + obstacle_cells
         ↓
-occupancy graph (GROUND traversable; MIXED / OBSTACLE / obstacle_count blocked)
+browser occupancy graph
         ↓
 Start → Destination → Locate path
         ↓
-browser A* (only then)
+A* (browser)
         ↓
-route polyline + playback if PATH FOUND
+route + playback only if PATH FOUND
 ```
 
-**This is a website planning demonstration using exported ORBIT environment data. It is not the production ORBIT runtime planner.** It is not live autonomous navigation or vehicle control.
+This is a **website-side planning demonstration using exported ORBIT environment data**. It is **not** the production ORBIT runtime planner and not live navigation.
 
 ---
 
-## Exported metrics
+## 9. Datasets
 
-Shown only when the underlying JSON fields exist:
+| Dataset | Architecture | Public git / typical deploy |
+|---------|--------------|-----------------------------|
+| nuScenes | Scenes (`scene-0061`, `scene-fixture`, …) | Small `scene-fixture` JSON may be committed; full scenes stay local |
+| SemanticKITTI | Sequences | Listed until exported JSON exists — no invented sequence |
+| ORBIT Synthetic | Environments | Often one large frame; **not** committed (too large) |
 
-| Metric | Source |
-|--------|--------|
-| Input points | `input_points` / `point_count_full` / `mapped_points` |
-| Exported points | `point_count_exported` |
-| Adaptive cells | metrics or array length |
-| Point-to-cell ratio | input points ÷ cell count |
-| Resolution levels | unique exported `resolution` values |
-| Fine / coarse | counts at min and max unique resolutions |
-| Live tracks | `live_tracks` or `tracks.length` |
-| Frame index / exported frames | frame + manifest |
+Registry: `web/public/data/datasets.json`. Missing `manifest.json` → honest “Not exported yet”.
 
-Not displayed: FPS, pipeline latency, classification accuracy, invented memory savings.
-
----
-
-## Technology stack
-
-| Layer | Technologies actually used |
-|-------|----------------------------|
-| Perception / mapping | Python 3, NumPy, Open3D, scikit-learn (DBSCAN sidecar), Matplotlib |
-| Tests | pytest |
-| Website | React, TypeScript, Vite, Tailwind CSS, Framer Motion, Three.js / R3F |
-| Export | `python -m web_export.export_orbit_data` |
-
-There is no `pyproject.toml`. `src/` is used via `PYTHONPATH=src`.
-
----
-
-## Project structure
-
-```text
-ORBIT/
-  README.md                 # this file
-  requirements.txt
-  docs/                     # architecture, development, website, datasets
-  assets/
-    screenshots/            # review screenshots of the working prototype
-    presentation/           # PPT drop-in (placeholder until the file exists)
-    demo-video/             # demo video drop-in (placeholder until the file exists)
-  src/                      # Python prototype pipeline
-    mapping/                # AdaptiveGrid
-    perception/
-    tracking/
-    world_model/
-    visualization/          # Matplotlib dashboard (do not replace)
-    web_export/             # JSON exporter
-    datasets/
-  tests/
-  web/                      # Vite + React visualisation client
-    public/data/            # datasets.json + local JSON copies (mostly gitignored)
-  exported_data/            # exporter output (JSON gitignored)
-```
-
----
-
-## Installation / running locally
-
-### Python pipeline
+Copy a full export locally:
 
 ```bash
-python3 -m venv venv
-source venv/bin/activate          # Windows: venv\Scripts\activate
-pip install -r requirements.txt
-
-mkdir -p data
-PYTHONPATH=src python src/synthetic_scene.py
-
-PYTHONPATH=src python -m pytest tests/
-```
-
-End-to-end (requires a dataset tree; see [docs/development.md](docs/development.md)):
-
-```bash
-PYTHONPATH=src python src/orbit_system.py --source kitti --sequence 00 --start 0 --end 9 --dashboard
-```
-
-Export for the website (example):
-
-```bash
-PYTHONPATH=src python -m web_export.export_orbit_data \
-  --source nuscenes --scene scene-0061 --start 0 --end 19 \
-  --output exported_data --max-points 5000
-
 mkdir -p web/public/data/nuscenes/scene-0061
 cp exported_data/scene-0061/*.json web/public/data/nuscenes/scene-0061/
 ```
 
-### Website
+---
+
+## 10. Web platform
+
+| Route | Contents |
+|-------|----------|
+| `/` | Landing |
+| `/demo` | Interactive Demo (LiDAR, world, grid, objects) |
+| `/map` | 2.5D Map (terrain / semantic / resolution / obstacles, adaptive structure) |
+| `/planning` | Start / Destination / Locate path / playback |
+| `/pipeline`, `/about`, `/technology` | System description |
+
+---
+
+## 11. Metrics
+
+Shown only when JSON fields exist: input points, exported points, adaptive cells, point-to-cell ratio, resolution levels, fine/coarse counts, live tracks, frame index, exported frames.
+
+Not shown: accuracy, FPS, latency, memory savings.
+
+---
+
+## 12. Technology stack
+
+- **Pipeline:** Python 3, NumPy, Open3D, Matplotlib, scikit-learn (DBSCAN sidecar)
+- **Tests:** pytest
+- **Website:** React, TypeScript, Vite, Tailwind CSS, Framer Motion, Three.js / React Three Fiber
+- **Export:** `python -m web_export.export_orbit_data`
+- **Deploy target:** Vercel (static Vite build)
+
+---
+
+## 13. Repository structure
+
+```text
+ORBIT/
+├── README.md
+├── SUBMISSION_GUIDE.md
+├── requirements.txt
+├── docs/                      # technical documentation
+├── assets/screenshots/        # prototype screenshots
+├── submission/                # PPT and demo-video placeholders
+├── src/                       # Python ORBIT pipeline
+├── tests/
+├── web/                       # Vite + React visualization
+│   ├── vercel.json
+│   └── public/data/           # datasets.json (+ optional small fixture)
+└── exported_data/             # local exporter output (JSON gitignored)
+```
+
+---
+
+## 14. Installation
+
+### Website (visualization)
 
 ```bash
 cd web
@@ -276,14 +214,7 @@ npm install
 npm run dev
 ```
 
-Open:
-
-- http://localhost:5173/
-- http://localhost:5173/demo
-- http://localhost:5173/map
-- http://localhost:5173/planning
-
-Production build:
+Open http://localhost:5173/ — also `/demo`, `/map`, `/planning`.
 
 ```bash
 cd web
@@ -291,61 +222,76 @@ npm run build
 npm run preview
 ```
 
+### Python pipeline
+
+```bash
+python3 -m venv venv
+source venv/bin/activate          # Windows: venv\Scripts\activate
+pip install -r requirements.txt
+PYTHONPATH=src python -m pytest tests/
+```
+
+Dataset-dependent pipeline commands: [docs/development.md](docs/development.md).
+
 ---
 
-## Screenshots / demo
+## 15. Deploy (Vercel)
 
-Real captures of this prototype (not mockups):
+| Setting | Value |
+|---------|--------|
+| Root directory | `web` |
+| Build command | `npm run build` |
+| Output directory | `dist` |
+| Environment variables | none required |
 
-| Preview | File |
-|---------|------|
+`web/vercel.json` rewrites unknown paths to `index.html` so `/demo`, `/map`, and `/planning` work as an SPA.
+
+A public deploy includes `datasets.json` and, if present, the small `scene-fixture` export. Large nuScenes / synthetic frames stay gitignored. Reviewers who need a full scene should run locally after copying JSON into `web/public/data/` as above.
+
+---
+
+## 16. Screenshots
+
+| | |
+|---|---|
 | Landing | [assets/screenshots/01-landing.png](assets/screenshots/01-landing.png) |
 | Interactive Demo | [assets/screenshots/02-interactive-demo.png](assets/screenshots/02-interactive-demo.png) |
-| Adaptive grid map | [assets/screenshots/03-adaptive-grid-map.png](assets/screenshots/03-adaptive-grid-map.png) |
-| Foveated / synthetic map | [assets/screenshots/04-synthetic-foveation.png](assets/screenshots/04-synthetic-foveation.png) |
+| 2.5D Map | [assets/screenshots/03-adaptive-grid-map.png](assets/screenshots/03-adaptive-grid-map.png) |
+| Synthetic / foveation | [assets/screenshots/04-synthetic-foveation.png](assets/screenshots/04-synthetic-foveation.png) |
 | Path planning | [assets/screenshots/05-path-planning.png](assets/screenshots/05-path-planning.png) |
 
-**Presentation (PPT)** and **demo video** are not fabricated here. Drop files into:
-
-- [assets/presentation/](assets/presentation/README.md)
-- [assets/demo-video/](assets/demo-video/README.md)
-
-Do not invent YouTube, Drive, or Canva links.
+Notes: [assets/screenshots/README.md](assets/screenshots/README.md). PPT and demo video: [submission/](submission/).
 
 ---
 
-## Documentation
+## 17. Documentation
 
 | Document | Contents |
 |----------|----------|
 | [docs/project-context.md](docs/project-context.md) | Official statement vs current status |
-| [docs/architecture.md](docs/architecture.md) | Current Python architecture |
-| [docs/development.md](docs/development.md) | Commands, tests, conventions |
-| [docs/web.md](docs/web.md) | Website phases and JSON mapping |
+| [docs/architecture.md](docs/architecture.md) | Python architecture |
+| [docs/development.md](docs/development.md) | Commands and tests |
+| [docs/web.md](docs/web.md) | Website and JSON export |
 | [docs/dashboard.md](docs/dashboard.md) | Matplotlib dashboard |
 | [docs/nuscenes.md](docs/nuscenes.md) | nuScenes adapter |
-| [web/README.md](web/README.md) | Website-only run notes |
+| [web/README.md](web/README.md) | Website run notes |
+| [SUBMISSION_GUIDE.md](SUBMISSION_GUIDE.md) | SIH packaging |
 
 ---
 
-## Future work
+## 18. Future work
 
-- PointNet++ and Sparse CNN (or equivalent) learned LiDAR perception
-- Learned semantic segmentation
-- Learned terrain / drivable classification
-- Learned static vs dynamic object classification
-- Production Python runtime planner
-- Live autonomous vehicle control
-- Official latency / FPS evaluation
-- Official memory benchmarking
-- Classification accuracy protocols vs range
+- PointNet++ and Sparse CNN (learned LiDAR perception)
+- Learned semantic segmentation and terrain / drivable classification
+- Improved learned object classification
+- Production runtime planner
+- Real-time vehicle integration
+- Formal latency, FPS, memory, and accuracy evaluation
 
 ---
 
-## Prototype disclaimer
+## 19. Prototype status
 
-ORBIT is a **prototype / proof-of-concept** developed under limited implementation time for the intended DRDO/iDEX problem.
+ORBIT is a **prototype / proof-of-concept**. It demonstrates an adaptive variable-resolution **2.5D spatial representation** from LiDAR-derived / exported data, plus interactive visualization and a browser planning demonstration.
 
-The current implementation demonstrates an **adaptive variable-resolution 2.5D spatial representation** built from real LiDAR-derived / exported environment data, plus an honest visualization and planning **demonstration** client.
-
-Deep learning semantic perception is **planned future work**. Do not read this README as a claim that PointNet++ or Sparse CNNs are in the tree.
+It is not a completed DRDO/iDEX production system. Deep learning remains planned future work.

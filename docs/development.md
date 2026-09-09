@@ -27,6 +27,8 @@ ORBIT/
     ...
   tests/                 # pytest modules (src/ must be on PYTHONPATH)
   web/                   # React / Vite site (separate from dashboard)
+  assets/screenshots/    # public prototype screenshots
+  submission/            # PPT / demo-video placeholders (no invented links)
   exported_data/         # JSON dumps for the website (not committed)
   data/                  # gitignored; not shipped
 ```

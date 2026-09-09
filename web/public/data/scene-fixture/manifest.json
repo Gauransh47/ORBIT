@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "scene_id": "scene-fixture",
+  "source": "nuscenes",
+  "frame_count": 3,
+  "frame_indices": [
+    0,
+    1,
+    2
+  ],
+  "world_frame": "lidar_frame_0",
+  "world_reference_frame_index": 0,
+  "coordinate_system": {
+    "world": "lidar_frame_0",
+    "note": "World is the first processed LiDAR frame (index 0). ORBIT does not convert to nuScenes global. Sensor-frame points are current-LiDAR XYZ after range filtering. Heading is atan2 of LiDAR +X after T_ego_to_world.",
+    "lidar_forward": "+X"
+  },
+  "downsample": {
+    "method": "evenly_spaced_indices",
+    "max_points": 8,
+    "description": "points and world_points share np.round(linspace(0, N-1, max_points)) into mapped XYZ. Full mapped_points stay in metrics.point_count_full."
+  },
+  "pose_source": "nuscenes_ego_pose_lidar_to_frame0",
+  "files": [
+    "frame_0000.json",
+    "frame_0001.json",
+    "frame_0002.json"
+  ],
+  "website_note": "The website visualizes exported ORBIT pipeline results. It does not execute perception, mapping, tracking, or world-model algorithms in the browser.",
+  "nuscenes_scene": {
+    "name": "scene-fixture",
+    "token": "sceneA",
+    "description": "synthetic fixture",
+    "nbr_samples": 3,
+    "first_sample_token": "samp0",
+    "last_sample_token": "samp2",
+    "nbr_lidar_keyframes": 3
+  },
+  "dataset_root": "/tmp/orbit_nusc_fixture"
+}

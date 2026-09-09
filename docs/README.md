@@ -16,7 +16,8 @@ are never described as finished unless they exist in the code.
 | [Development](development.md) | Setup, how to run scripts, tests, conventions |
 | [Dashboard](dashboard.md) | Visual Intelligence dashboard (real pipeline outputs) |
 | [nuScenes](nuscenes.md) | v1.0-mini LIDAR_TOP adapter (external dataset) |
-| [Website](web.md) | React/Vite visualization client (Phases 1–9) |
+| [Website](web.md) | Visualization client (exported JSON) |
+| [Submission packaging](../SUBMISSION_GUIDE.md) | SIH folder layout, PPT/video placeholders |
 
 Application code lives under `src/`. The website lives under `web/`.
-The root [README.md](../README.md) is the SIH-oriented project overview.
+The root [README.md](../README.md) is the public project overview.
