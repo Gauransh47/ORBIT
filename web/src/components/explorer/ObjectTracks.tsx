@@ -116,11 +116,11 @@ export function ProposalFootprints({ proposals }: { proposals: ProposalRecord[] 
   )
 }
 
-export function EgoMarker({ xy }: { xy: [number, number] }) {
-  const [x, y, z] = orbitToThree(xy[0], xy[1], 0.15)
+export function EgoMarker({ xy, radius = 0.28 }: { xy: [number, number]; radius?: number }) {
+  const [x, y, z] = orbitToThree(xy[0], xy[1], radius * 0.55)
   return (
     <mesh position={[x, y, z]}>
-      <coneGeometry args={[0.28, 0.7, 8]} />
+      <coneGeometry args={[radius, radius * 2.5, 8]} />
       <meshStandardMaterial color="#3ddcff" />
     </mesh>
   )

@@ -224,6 +224,7 @@ export default function MapExplorer() {
         </div>
 
         <div className="flex flex-1 items-stretch justify-between gap-3 py-3">
+          {hasGrid ? (
           <div className="pointer-events-auto flex w-[11.5rem] flex-col justify-center gap-4 self-center">
             <div className="rounded-2xl border border-orbit-line/80 bg-orbit-bg/75 px-3 py-3 backdrop-blur-md">
               <p className="font-mono text-[10px] tracking-[0.28em] text-orbit-cyan">VIEW MODE</p>
@@ -324,7 +325,11 @@ export default function MapExplorer() {
               </label>
             </div>
           </div>
+          ) : (
+            <div />
+          )}
 
+          {hasGrid ? (
           <div className="pointer-events-auto hidden w-[15.5rem] flex-col justify-center gap-3 self-center sm:flex">
             <div className="rounded-2xl border border-orbit-line/80 bg-orbit-bg/75 px-4 py-3 backdrop-blur-md">
               <MapLegend
@@ -337,6 +342,9 @@ export default function MapExplorer() {
               <MapInspector cell={selectedCell} />
             </div>
           </div>
+          ) : (
+            <div />
+          )}
         </div>
 
         <div className="pointer-events-auto mx-auto w-full max-w-3xl space-y-3">
@@ -355,6 +363,7 @@ export default function MapExplorer() {
               <Stat k="MAP FRAME" v={data.frame.world_points_frame ?? data.manifest?.world_frame ?? 'lidar_frame_0'} />
             </div>
           ) : null}
+          {data.frame ? (
           <div className="rounded-2xl border border-orbit-line/80 bg-orbit-bg/80 px-4 py-3 backdrop-blur-md">
             <FrameControls
               label={frameLabel}
@@ -366,6 +375,7 @@ export default function MapExplorer() {
               onTogglePlay={() => setPlaying((p) => !p)}
             />
           </div>
+          ) : null}
         </div>
       </div>
     </main>
