@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import RenderErrorBoundary from '../components/RenderErrorBoundary'
 import DatasetExplorer from '../components/explorer/DatasetExplorer'
 import FrameControls from '../components/explorer/FrameControls'
 import LoadingState from '../components/explorer/LoadingState'
@@ -9,7 +10,7 @@ import type { MapCameraView } from '../components/map/MapCameraRig'
 import type { MapVizMode } from '../components/map/MapGrid'
 import { useCollectionSelection } from '../hooks/useCollectionSelection'
 import { useOrbitData } from '../hooks/useOrbitData'
-import { frameHasElevation } from '../lib/cellVisual'
+import { frameHasElevation, MAX_RENDER_CELLS } from '../lib/cellVisual'
 import { PLAYBACK_MS } from '../types/orbit'
 
 function pad(n: number): string {
@@ -63,6 +64,8 @@ export default function MapExplorer() {
   const obstacleCells = data.frame?.obstacle_cells ?? []
   const hasElevation = frameHasElevation(cells)
   const hasGrid = cells.length > 0
+  const sampled = cells.length > MAX_RENDER_CELLS
+  const singleFrame = (data.indices?.length ?? 0) <= 1
   const hasTrajectory = Boolean(data.trajectory?.samples?.length)
   const hasObjects = Boolean((data.frame?.tracks?.length ?? 0) + (data.frame?.world_objects?.length ?? 0))
   const hasWorldPoints = Boolean(data.frame?.world_points?.length)
@@ -181,7 +184,15 @@ export default function MapExplorer() {
           />
         ) : null}
         {data.frame && hasGrid && !overlayError && !data.bootstrapError ? (
-          <div className={`absolute inset-0 ${data.frameLoading ? 'opacity-80' : ''}`}>
+          <div className="absolute inset-0">
+            <RenderErrorBoundary
+              fallback={(err) => (
+                <LoadingState
+                  label="MAP FAILED TO RENDER"
+                  error={`${err.message} Large adaptive grids are subsampled for drawing only; the export is unchanged.`}
+                />
+              )}
+            >
             <MapScene
               frame={data.frame}
               mode={mode}
@@ -194,6 +205,7 @@ export default function MapExplorer() {
               showWorldPoints={showWorldPoints && hasWorldPoints}
               showObstacleCells={showObstacleCells && hasObstacleOverlay}
             />
+            </RenderErrorBoundary>
           </div>
         ) : null}
       </div>
@@ -209,6 +221,7 @@ export default function MapExplorer() {
               {datasetLabel}
               {sceneLabel !== '—' ? ` · ${sceneLabel}` : ''}
               {` · ${frameLabel}`}
+              {singleFrame ? ' · 1 FRAME EXPORT' : ''}
             </p>
           </div>
           <div className="pointer-events-auto w-full max-w-xl lg:w-[28rem]">
@@ -271,6 +284,12 @@ export default function MapExplorer() {
                   </button>
                 ))}
               </div>
+              {sampled ? (
+                <p className="mt-3 text-[10px] leading-4 text-orbit-dim">
+                  Drawing {MAX_RENDER_CELLS.toLocaleString()} of {cells.length.toLocaleString()} exported
+                  cells (evenly spaced visualization sample).
+                </p>
+              ) : null}
               <p className="mt-3 text-[10px] leading-4 tracking-wide text-orbit-dim">
                 Drag rotate · scroll zoom · right-drag pan
               </p>

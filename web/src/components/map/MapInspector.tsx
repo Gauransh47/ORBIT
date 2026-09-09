@@ -16,8 +16,16 @@ export default function MapInspector({ cell }: { cell: AdaptiveCellRecord | null
     )
   }
   const rows: { k: string; v: string }[] = []
-  rows.push({ k: 'CENTER', v: `${cell.center[0].toFixed(2)}, ${cell.center[1].toFixed(2)}` })
-  rows.push({ k: 'RESOLUTION', v: `${cell.resolution.toFixed(3)} m` })
+  rows.push({
+    k: 'CENTER',
+    v:
+      cell.center && cell.center.length >= 2
+        ? `${Number(cell.center[0]).toFixed(2)}, ${Number(cell.center[1]).toFixed(2)}`
+        : '—',
+  })
+  if (cell.resolution != null && Number.isFinite(cell.resolution)) {
+    rows.push({ k: 'RESOLUTION', v: `${cell.resolution.toFixed(3)} m` })
+  }
   if (cell.semantic_class) rows.push({ k: 'CLASS', v: cell.semantic_class })
   if (cell.ix != null && cell.iy != null) rows.push({ k: 'INDEX', v: `${cell.ix}, ${cell.iy}` })
   if (cell.level != null) rows.push({ k: 'LEVEL', v: String(cell.level) })

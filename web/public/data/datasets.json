@@ -41,7 +41,6 @@
       "description": "Controlled synthetic spatial environments",
       "source": "synthetic",
       "collection_label": "environment",
-      "status": "planned",
       "collections": [
         {
           "id": "environment-01",

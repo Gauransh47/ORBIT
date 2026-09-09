@@ -1,13 +1,36 @@
 import type { AdaptiveCellRecord } from '../types/orbit'
 import { orbitToThree } from './orbitCoords'
 
+/** Max InstancedMesh cells drawn. Full export remains in memory for counts/planning. */
+export const MAX_RENDER_CELLS = 28000
+
+export function evenPickIndices(count: number, max: number): number[] {
+  const n = Math.max(0, Math.floor(count))
+  const cap = Math.max(1, Math.floor(max))
+  if (n <= cap) {
+    return Array.from({ length: n }, (_, i) => i)
+  }
+  const out = new Array<number>(cap)
+  for (let i = 0; i < cap; i++) {
+    out[i] = Math.round((i * (n - 1)) / (cap - 1))
+  }
+  return out
+}
+
+export function isFiniteNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value)
+}
+
+export function isRenderableCell(cell: AdaptiveCellRecord | null | undefined): cell is AdaptiveCellRecord {
+  if (!cell || !Array.isArray(cell.center) || cell.center.length < 2) return false
+  if (!isFiniteNumber(cell.center[0]) || !isFiniteNumber(cell.center[1])) return false
+  if (!isFiniteNumber(cell.resolution) || cell.resolution <= 0) return false
+  return true
+}
+
 export function cellElevation(cell: AdaptiveCellRecord): number | null {
-  if (cell.ground_elevation != null && Number.isFinite(cell.ground_elevation)) {
-    return cell.ground_elevation
-  }
-  if (cell.z_mean != null && Number.isFinite(cell.z_mean)) {
-    return cell.z_mean
-  }
+  if (isFiniteNumber(cell.ground_elevation)) return cell.ground_elevation
+  if (isFiniteNumber(cell.z_mean)) return cell.z_mean
   return null
 }
 
@@ -16,26 +39,37 @@ export function frameHasElevation(cells: AdaptiveCellRecord[]): boolean {
 }
 
 export function elevationRange(cells: AdaptiveCellRecord[]): { min: number; max: number } | null {
-  const vals = cells.map(cellElevation).filter((v): v is number => v != null)
-  if (!vals.length) return null
-  return { min: Math.min(...vals), max: Math.max(...vals) }
+  let min = Infinity
+  let max = -Infinity
+  for (const cell of cells) {
+    const v = cellElevation(cell)
+    if (v == null) continue
+    if (v < min) min = v
+    if (v > max) max = v
+  }
+  if (!Number.isFinite(min) || !Number.isFinite(max)) return null
+  return { min, max }
 }
 
 export function gridFocus(cells: AdaptiveCellRecord[]): {
   target: [number, number, number]
   radius: number
 } {
-  if (!cells.length) return { target: [0, 0, 0], radius: 40 }
   let minX = Infinity
   let maxX = -Infinity
   let minY = Infinity
   let maxY = -Infinity
   let minZ = Infinity
   let maxZ = -Infinity
+  let any = false
   for (const cell of cells) {
-    const half = Math.max(cell.resolution ?? 0.05, 0.03) * 0.5
+    if (!isRenderableCell(cell)) continue
+    const half = Math.max(cell.resolution, 0.03) * 0.5
     const elev = cellElevation(cell) ?? 0
+    if (!isFiniteNumber(elev)) continue
     const [x, y, z] = orbitToThree(cell.center[0], cell.center[1], elev)
+    if (![x, y, z].every(isFiniteNumber)) continue
+    any = true
     minX = Math.min(minX, x - half)
     maxX = Math.max(maxX, x + half)
     minY = Math.min(minY, y)
@@ -43,11 +77,11 @@ export function gridFocus(cells: AdaptiveCellRecord[]): {
     minZ = Math.min(minZ, z - half)
     maxZ = Math.max(maxZ, z + half)
   }
+  if (!any) return { target: [0, 0, 0], radius: 40 }
   const span = Math.max(maxX - minX, maxY - minY, maxZ - minZ, 0.4)
-  return {
-    target: [(minX + maxX) / 2, (minY + maxY) / 2, (minZ + maxZ) / 2],
-    radius: span * 0.85,
-  }
+  const target: [number, number, number] = [(minX + maxX) / 2, (minY + maxY) / 2, (minZ + maxZ) / 2]
+  if (!target.every(isFiniteNumber)) return { target: [0, 0, 0], radius: 40 }
+  return { target, radius: span * 0.85 }
 }
 
 export function resolutionColor(resolution: number): [number, number, number] {

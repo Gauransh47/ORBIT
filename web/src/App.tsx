@@ -4,11 +4,10 @@ import Nav from './components/Nav'
 import Home from './pages/Home'
 import About from './pages/About'
 import Pipeline from './pages/Pipeline'
-import Planning from './pages/Planning'
 import Technology from './pages/Technology'
-
 const Demo = lazy(() => import('./pages/Demo'))
 const MapExplorer = lazy(() => import('./pages/MapExplorer'))
+const Planning = lazy(() => import('./pages/Planning'))
 
 export default function App() {
   return (

@@ -4,6 +4,8 @@ import { orbitToThree } from '../../lib/orbitCoords'
 import {
   cellElevation,
   elevationRange,
+  evenPickIndices,
+  MAX_RENDER_CELLS,
   resolutionColor,
   semanticColor,
   terrainColor,
@@ -66,16 +68,19 @@ export default function MapGrid({
       }),
     [],
   )
+  const pick = useMemo(() => evenPickIndices(cells.length, MAX_RENDER_CELLS), [cells.length])
   const range = useMemo(() => elevationRange(cells), [cells])
 
   useLayoutEffect(() => {
     const mesh = meshRef.current
     if (!mesh) return
     const dummy = new THREE.Object3D()
-    for (let i = 0; i < cells.length; i++) {
-      const cell = cells[i]
+    for (let i = 0; i < pick.length; i++) {
+      const cell = cells[pick[i]]
+      if (!cell) continue
       const res = Math.max(cell.resolution ?? 0.05, 0.03)
-      const elev = cellElevation(cell) ?? 0
+      const elevRaw = cellElevation(cell)
+      const elev = elevRaw != null && Number.isFinite(elevRaw) ? elevRaw : 0
       const obstacleTop =
         cell.obstacle_elevation != null && Number.isFinite(cell.obstacle_elevation)
           ? cell.obstacle_elevation
@@ -85,15 +90,16 @@ export default function MapGrid({
           ? Math.max(0.05, Math.abs(obstacleTop - elev))
           : Math.max(0.05, res * 0.22)
       const [x, y, z] = orbitToThree(cell.center[0], cell.center[1], elev)
+      if (![x, y, z, res, thickness].every((v) => Number.isFinite(v))) continue
       dummy.position.set(x, y + thickness / 2, z)
       dummy.scale.set(res * 0.94, thickness, res * 0.94)
       dummy.updateMatrix()
       mesh.setMatrixAt(i, dummy.matrix)
-      mesh.setColorAt(i, colorFor(cell, mode, range, i === selectedIndex))
+      mesh.setColorAt(i, colorFor(cell, mode, range, pick[i] === selectedIndex))
     }
     mesh.instanceMatrix.needsUpdate = true
     if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true
-  }, [cells, mode, range, selectedIndex])
+  }, [cells, mode, pick, range, selectedIndex])
 
   useLayoutEffect(() => {
     return () => {
@@ -107,13 +113,15 @@ export default function MapGrid({
   return (
     <instancedMesh
       ref={meshRef}
-      args={[geometry, material, cells.length]}
+      args={[geometry, material, Math.max(pick.length, 1)]}
       frustumCulled={false}
       onClick={(e) => {
         e.stopPropagation()
         const id = e.instanceId
         if (id == null) return
-        onSelectIndex(id === selectedIndex ? null : id)
+        const original = pick[id]
+        if (original == null) return
+        onSelectIndex(original === selectedIndex ? null : original)
       }}
     />
   )

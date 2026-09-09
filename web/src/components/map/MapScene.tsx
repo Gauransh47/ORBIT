@@ -1,3 +1,4 @@
+import { useMemo } from 'react'
 import { Canvas } from '@react-three/fiber'
 import { OrbitControls } from '@react-three/drei'
 import { gridFocus } from '../../lib/cellVisual'
@@ -33,7 +34,8 @@ export default function MapScene({
   showObstacleCells: boolean
 }) {
   const cells = frame.adaptive_cells ?? []
-  const markerRadius = Math.min(1.2, Math.max(0.04, gridFocus(cells).radius * 0.06))
+  const focus = useMemo(() => gridFocus(cells), [cells])
+  const markerRadius = Math.min(1.2, Math.max(0.04, focus.radius * 0.06))
 
   return (
     <Canvas

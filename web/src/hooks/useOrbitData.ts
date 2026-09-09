@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { FrameCache } from '../lib/frameCache'
 import { fetchJson } from '../lib/fetchJson'
 import { dataFileUrl } from '../lib/dataPaths'
+import { normalizeFrameJson } from '../lib/normalizeFrame'
 import type { FrameJson, Manifest, TrajectoryFile } from '../types/orbit'
 
 export function useOrbitData(baseUrl: string | null) {
@@ -45,7 +46,7 @@ export function useOrbitData(baseUrl: string | null) {
       setFromCache(false)
       setFrameError(null)
       try {
-        const json = await fetchJson<FrameJson>(dataFileUrl(baseUrl, fileName))
+        const json = normalizeFrameJson(await fetchJson<FrameJson>(dataFileUrl(baseUrl, fileName)))
         if (request !== requestRef.current) return
         cacheRef.current.set(index, json)
         setFrame(json)

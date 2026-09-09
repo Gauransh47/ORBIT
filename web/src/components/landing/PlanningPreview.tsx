@@ -6,11 +6,12 @@ const steps = ['Start', 'Terrain understanding', 'Obstacle avoidance', 'Traversa
 
 export default function PlanningPreview() {
   return (
-    <Section kicker="PLANNED EXTENSION" title="Path planning will sit on the terrain map.">
+    <Section kicker="PLANNING DEMONSTRATION" title="A* on exported ORBIT terrain, not a runtime planner.">
       <p className="max-w-2xl text-sm leading-7 text-orbit-dim">
-        ORBIT does not currently compute an autonomous driving path. Geometric
-        cell class (GROUND / MIXED / OBSTACLE) is not a learned drivability model.
-        The path below is a conceptual illustration of a future layer.
+        The Python pipeline does not compute a driving path. The /planning page
+        runs a website-side A* demonstration on exported adaptive_cells and
+        obstacle_cells. Geometric GROUND / MIXED / OBSTACLE is not a learned
+        drivability model. The sketch below is still conceptual.
       </p>
       <div className="mt-8 overflow-hidden rounded-2xl border border-orbit-line bg-[#0a1018] p-4">
         <p className="font-mono text-[10px] tracking-widest text-orbit-dim">CONCEPTUAL ROUTE</p>
@@ -31,7 +32,7 @@ export default function PlanningPreview() {
         ))}
       </ol>
       <Link to="/planning" className="mt-8 inline-block text-sm text-orbit-cyan hover:underline">
-        Path planning notes →
+        Open the planner →
       </Link>
     </Section>
   )

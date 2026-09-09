@@ -22,10 +22,21 @@ Open http://localhost:5173/demo?dataset=nuscenes&scene=scene-0061
 Dedicated 2.5D map explorer: http://localhost:5173/map?dataset=nuscenes&scene=scene-0061
 
 That page visualizes exported `adaptive_cells` (center, resolution,
-semantic_class, elevations). Modes: Terrain, Semantic, Resolution,
-Obstacles. Frame loading uses the same on-demand LRU cache as `/demo`.
-Datasets without JSON stay **Not exported yet**. The browser does not
-run mapping algorithms.
+semantic_class, elevations). Large synthetic grids are subsampled for drawing
+only (full JSON is unchanged).
+
+Path planning: http://localhost:5173/planning?dataset=nuscenes&scene=scene-0061
+
+`/planning` runs website-side A* on exported GROUND cells. It does not claim
+an ORBIT runtime planner.
+
+Synthetic export (one frame, often >100k cells):
+
+```bash
+PYTHONPATH=src python -m web_export.export_orbit_data --source synthetic --output exported_data
+mkdir -p web/public/data/synthetic
+cp exported_data/synthetic/*.json web/public/data/synthetic/
+```
 
 ```bash
 npm run build

@@ -53,9 +53,9 @@ Landing sketches are labeled conceptual. They are not scene-0061 output.
 3. **Exporter** — real PipelineState JSON (`src/web_export/`).
 4. **Interactive demo** — PREV/NEXT explorer from JSON.
 5. **Dataset-aware explorer** — registry, nuScenes / KITTI / synthetic.
-6. **2.5D map explorer (this phase)** — dedicated `/map` adaptive grid.
-7. **Path planning page** — still a planned extension unless the Python
-   runtime adds a planner.
+6. **2.5D map explorer** — dedicated `/map` adaptive grid.
+7. **Path planning demonstration (this phase)** — website A* on exported cells.
+8. **Visual polish** — contrast, lighting, legends (not this phase).
 
 Do not invent metrics in the demo once JSON exists.
 
@@ -73,9 +73,12 @@ Do not invent metrics in the demo once JSON exists.
 ## Current website limitations
 
 - The landing hero sketches remain conceptual (not exported JSON).
-- Path planning remains a planned extension.
-- `web/public/data/scene-0061/*.json` is not committed; copy from `exported_data/`.
-- SemanticKITTI and ORBIT Synthetic stay listed as “Not exported yet” until JSON exists.
+- Path planning on `/planning` is a **website A\* demonstration**, not a Python
+  ORBIT runtime planner.
+- Visual contrast / color grading is deferred to Phase 8.
+- `web/public/data/**/*.json` (except `datasets.json`) is not committed; copy
+  from `exported_data/`.
+- SemanticKITTI stays listed as “Not exported yet” until JSON exists.
 
 ## What remains after Phase 3
 
@@ -387,5 +390,86 @@ Frame navigation: **− / +**, Previous / Next, optional Play. Not a slider.
 | No `trajectory.json` | Trajectory overlay disabled |
 | Empty `obstacle_cells` | Overlay disabled |
 
-Path planning is not part of this phase.
+Path planning is not part of this phase. Visual color polish is deferred to Phase 8.
+
+# Phase 7 — Path planning demonstration + synthetic map crash
+
+## Path planning (`/planning`)
+
+This page is **not** an ORBIT runtime planner. The Python pipeline still does
+not emit a driving path. The website runs A* on **exported** environment JSON
+and labels the route as computed in the browser.
+
+```
+exported adaptive_cells + obstacle_cells + pose.ego_xy
+        ↓
+website occupancy graph (GROUND free; OBSTACLE / MIXED / obstacle_cells blocked)
+        ↓
+A* (Euclidean heuristic, cell-center graph)
+        ↓
+polyline drawn only if a path exists
+```
+
+URL query matches Phase 5 (`dataset`, `scene` / `sequence` / `environment`).
+One-frame collections (typical synthetic export) are supported: Previous/Next
+are disabled, Play is disabled.
+
+### Exported fields used
+
+| Field | Role |
+|-------|------|
+| `adaptive_cells.center`, `resolution`, `semantic_class` | Graph nodes / adjacency / traversability |
+| `adaptive_cells.obstacle_count` | Blocked if > 0 |
+| `obstacle_cells` | Extra blocked footprints |
+| `pose.ego_xy` | Default start |
+| `metrics.adaptive_cells` | Counts in the info strip |
+| `world_points_frame` / `manifest.world_frame` | Map frame label |
+
+Tracks and world objects are displayed only as optional map overlays elsewhere;
+they are not a planning cost layer.
+
+### Adaptive grid → planning graph
+
+Each exported cell is a node. Two **unblocked** cells are neighbors if their
+axis-aligned footprints touch (centers within `(res_i + res_j) / 2`). That
+preserves varying resolution without rasterizing a new uniform grid in the
+browser. Unmapped space is not a node, so the planner cannot invent free space.
+
+Blocked if any of: `semantic_class` is `OBSTACLE` or `MIXED`; `obstacle_count > 0`;
+footprint overlaps an exported `obstacle_cell`.
+
+Start and goal snap to the nearest **traversable** cell within about two cell
+widths. Click-to-set goal (default) or start. If A* fails, **no polyline is
+drawn**.
+
+## Synthetic `/map` crash (root cause)
+
+Inspected a real `--source synthetic` export (`scene_id: synthetic`,
+`frame_indices: [0]`, `frame_0000.json` ≈ 70 MB):
+
+- Schema matches nuScenes: `center`, `resolution`, `semantic_class`, elevations.
+- **151,924** `adaptive_cells` (no NaN/missing centers), 690 `obstacle_cells`.
+- Single trajectory sample. Valid `pose.ego_xy`.
+
+The crash was **not** a missing-field schema mismatch. Phase 6 created one
+`InstancedMesh` instance per exported cell and walked every cell for camera
+bounds / coloring. ~1.5×10⁵ boxes plus a 70 MB `JSON.parse` froze/crashed the
+tab. One-frame navigation was already valid (`FRAME 00 / 00`) but easy to
+overlook.
+
+### Fix
+
+- Deterministic even-index visualization sample (`MAX_RENDER_CELLS = 28000`).
+  Metrics and planning still use the **full** export.
+- Skip non-finite cells/camera targets.
+- Normalize missing arrays on load.
+- Render error boundary.
+- Label one-frame exports.
+
+Visual contrast / black cells vs blue background is **not** changed here
+(Phase 8).
+
+Copy synthetic JSON (gitignored) to `web/public/data/synthetic/` so
+`/map?dataset=synthetic&environment=environment-01` can probe `manifest.json`.
+
 
