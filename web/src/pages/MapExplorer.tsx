@@ -389,21 +389,21 @@ export default function MapExplorer() {
       }
       footer={
         data.frame ? (
-          <div className="space-y-3">
+          <div className="space-y-2">
             {metrics.length ? (
-              <div className="grid grid-cols-2 gap-x-5 gap-y-2 rounded-2xl border border-orbit-line/80 bg-orbit-bg/85 px-4 py-3 backdrop-blur-md sm:grid-cols-3 lg:grid-cols-4">
+              <div className="grid grid-cols-2 gap-x-5 gap-y-1 sm:grid-cols-4 lg:grid-cols-6">
                 {metrics.map((row) => (
                   <Stat key={row.k} k={row.k} v={row.v} />
                 ))}
               </div>
             ) : null}
-            <div className="grid grid-cols-2 gap-x-5 gap-y-2 rounded-2xl border border-orbit-line/80 bg-orbit-bg/85 px-4 py-3 backdrop-blur-md sm:grid-cols-3 lg:grid-cols-6">
-              <Stat k="DATASET" v={datasetLabel} />
-              <Stat k="COLLECTION" v={sceneLabel} />
-              <Stat k="FRAME" v={`${pad(data.frameIndex)} / ${pad(last)}`} />
-              <Stat k="MAP FRAME" v={data.frame.world_points_frame ?? data.manifest?.world_frame ?? 'lidar_frame_0'} />
-            </div>
-            <div className="rounded-2xl border border-orbit-line/80 bg-orbit-bg/85 px-4 py-3 backdrop-blur-md">
+            <div className="flex flex-wrap items-end justify-between gap-3">
+              <div className="grid min-w-0 flex-1 grid-cols-2 gap-x-5 gap-y-1 sm:grid-cols-4">
+                <Stat k="DATASET" v={datasetLabel} />
+                <Stat k="COLLECTION" v={sceneLabel} />
+                <Stat k="FRAME" v={`${pad(data.frameIndex)} / ${pad(last)}`} />
+                <Stat k="MAP FRAME" v={data.frame.world_points_frame ?? data.manifest?.world_frame ?? 'lidar_frame_0'} />
+              </div>
               <FrameControls
                 compact
                 label={frameLabel}

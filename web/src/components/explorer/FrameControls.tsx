@@ -41,7 +41,9 @@ export default function FrameControls({
           Next
         </button>
       </div>
-      <p className="text-[10px] tracking-[0.2em] text-orbit-dim">PLAYBACK OF EXPORTED FRAMES — NOT LIVE PROCESSING</p>
+      {compact ? null : (
+        <p className="text-[10px] tracking-[0.2em] text-orbit-dim">PLAYBACK OF EXPORTED FRAMES — NOT LIVE PROCESSING</p>
+      )}
     </div>
   )
 }

@@ -510,8 +510,8 @@ export default function Planning() {
       }
       footer={
         data.frame ? (
-          <div className="space-y-3">
-            <div className="rounded-2xl border border-orbit-line/80 bg-orbit-bg/85 px-4 py-3 backdrop-blur-md">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div>
               <p className="font-mono text-[10px] tracking-[0.22em] text-orbit-cyan">{statusLabel}</p>
               {plan?.status === 'ready' ? (
                 <p className="mt-1 text-sm text-orbit-text">
@@ -519,18 +519,16 @@ export default function Planning() {
                 </p>
               ) : null}
             </div>
-            <div className="rounded-2xl border border-orbit-line/80 bg-orbit-bg/85 px-4 py-3 backdrop-blur-md">
-              <FrameControls
-                compact
-                label={frameLabel}
-                atStart={data.atStart}
-                atEnd={data.atEnd}
-                playing={framePlaying}
-                onPrev={data.goPrev}
-                onNext={data.goNext}
-                onTogglePlay={() => setFramePlaying((p) => !p)}
-              />
-            </div>
+            <FrameControls
+              compact
+              label={frameLabel}
+              atStart={data.atStart}
+              atEnd={data.atEnd}
+              playing={framePlaying}
+              onPrev={data.goPrev}
+              onNext={data.goNext}
+              onTogglePlay={() => setFramePlaying((p) => !p)}
+            />
           </div>
         ) : null
       }
