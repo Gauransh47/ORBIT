@@ -106,6 +106,19 @@ export type AdaptiveCellRecord = {
   z_max?: number
 }
 
+export type ObstacleCellRecord = {
+  ix?: number
+  iy?: number
+  level?: number
+  center: [number, number]
+  resolution: number
+  ground_elevation?: number | null
+  obstacle_elevation?: number | null
+  obstacle_height?: number | null
+  obstacle_count?: number
+  ground_source?: string
+}
+
 export type ProposalRecord = {
   proposal_id?: number
   center?: [number, number]
@@ -145,7 +158,7 @@ export type FrameJson = {
   world_points: number[][]
   tracks: TrackRecord[]
   adaptive_cells: AdaptiveCellRecord[]
-  obstacle_cells?: unknown[]
+  obstacle_cells?: ObstacleCellRecord[]
   proposals: ProposalRecord[]
   world_objects: WorldObjectRecord[]
   retired_ids?: number[]

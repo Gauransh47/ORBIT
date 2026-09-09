@@ -6,17 +6,23 @@ export default function DatasetExplorer({
   datasetId,
   collectionId,
   onSelect,
+  compact,
 }: {
   datasets: ResolvedDataset[]
   loading: boolean
   datasetId: string | null
   collectionId: string | null
   onSelect: (datasetId: string, collectionId: string | null, kind: CollectionKind) => void
+  compact?: boolean
 }) {
   const selected = datasets.find((d) => d.id === datasetId)
 
   return (
-    <div className="rounded-[1.5rem] bg-[#0a1018] px-5 py-4">
+    <div
+      className={`rounded-[1.5rem] bg-[#0a1018]/90 backdrop-blur-sm ${
+        compact ? 'max-w-xl border border-orbit-line/80 px-4 py-3' : 'px-5 py-4'
+      }`}
+    >
       <p className="font-mono text-[10px] tracking-[0.28em] text-orbit-dim">EXPLORE DATA</p>
       {loading ? (
         <p className="mt-3 text-sm text-orbit-dim">Reading dataset registry…</p>
@@ -39,7 +45,9 @@ export default function DatasetExplorer({
                 }`}
               >
                 <span className="block text-sm text-orbit-text">{ds.display_name}</span>
-                <span className="mt-1 block text-[11px] leading-4 text-orbit-dim">{ds.description}</span>
+                {!compact ? (
+                  <span className="mt-1 block text-[11px] leading-4 text-orbit-dim">{ds.description}</span>
+                ) : null}
                 {!ds.available ? (
                   <span className="mt-2 block font-mono text-[10px] tracking-wide text-orbit-warn">
                     Not exported yet

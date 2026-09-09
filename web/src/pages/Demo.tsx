@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useSearchParams } from 'react-router-dom'
 import DatasetExplorer from '../components/explorer/DatasetExplorer'
 import ExplorerScene from '../components/explorer/ExplorerScene'
 import FrameControls from '../components/explorer/FrameControls'
@@ -7,7 +6,7 @@ import InformationPanel from '../components/explorer/InformationPanel'
 import LoadingState from '../components/explorer/LoadingState'
 import PipelineContext from '../components/explorer/PipelineContext'
 import ViewModeSelector from '../components/explorer/ViewModeSelector'
-import { findCollection, findDataset, useDatasetCatalog } from '../hooks/useDatasetCatalog'
+import { useCollectionSelection } from '../hooks/useCollectionSelection'
 import { useOrbitData } from '../hooks/useOrbitData'
 import {
   firstAvailableMode,
@@ -15,8 +14,6 @@ import {
   modeAvailable,
   modeUnavailableLabel,
 } from '../lib/capabilities'
-import { collectionIdFromParams, collectionQueryKey } from '../lib/dataPaths'
-import type { CollectionKind } from '../types/datasets'
 import { PLAYBACK_MS, type TrackRecord, type ViewMode, type WorldObjectRecord } from '../types/orbit'
 
 function pad(n: number): string {
@@ -83,67 +80,16 @@ function modeTitle(mode: ViewMode, frame: { points_frame?: string; world_points_
 }
 
 export default function Demo() {
-  const [params, setSearchParams] = useSearchParams()
-  const catalog = useDatasetCatalog()
-  const datasetParam = params.get('dataset')?.trim() || null
-  const collectionParam = collectionIdFromParams(params)
-
-  const dataset = findDataset(catalog.datasets, datasetParam)
-  const collection = findCollection(dataset, collectionParam)
-
-  const selectionError = useMemo(() => {
-    if (catalog.loading || catalog.error) return null
-    if (datasetParam && !dataset) {
-      return `Unknown dataset “${datasetParam}”.`
-    }
-    if (collectionParam && dataset && !collection) {
-      return `Unknown ${dataset.collection_label} “${collectionParam}” for ${dataset.display_name}.`
-    }
-    if (collection && !collection.available) {
-      return `${collection.label} is listed but has no exported JSON on this deployment.`
-    }
-    return null
-  }, [catalog.error, catalog.loading, collection, collectionParam, dataset, datasetParam])
-
-  useEffect(() => {
-    if (catalog.loading || catalog.error) return
-    if (datasetParam || collectionParam) return
-    const firstDs = catalog.datasets.find((d) => d.available)
-    const firstCol = firstDs?.collections.find((c) => c.available)
-    if (!firstDs || !firstCol) return
-    const next = new URLSearchParams()
-    next.set('dataset', firstDs.id)
-    next.set(collectionQueryKey(firstDs.collection_label), firstCol.id)
-    setSearchParams(next, { replace: true })
-  }, [catalog.datasets, catalog.error, catalog.loading, collectionParam, datasetParam, setSearchParams])
-
-  useEffect(() => {
-    if (catalog.loading || catalog.error) return
-    if (!datasetParam || collectionParam) return
-    const ds = findDataset(catalog.datasets, datasetParam)
-    const first = ds?.collections.find((c) => c.available)
-    if (!ds || !first) return
-    const next = new URLSearchParams()
-    next.set('dataset', ds.id)
-    next.set(collectionQueryKey(ds.collection_label), first.id)
-    setSearchParams(next, { replace: true })
-  }, [catalog.datasets, catalog.error, catalog.loading, collectionParam, datasetParam, setSearchParams])
-
-  useEffect(() => {
-    if (catalog.loading || datasetParam || !collectionParam) return
-    for (const ds of catalog.datasets) {
-      const col = ds.collections.find((c) => c.id === collectionParam && c.available)
-      if (col) {
-        const next = new URLSearchParams()
-        next.set('dataset', ds.id)
-        next.set(collectionQueryKey(ds.collection_label), col.id)
-        setSearchParams(next, { replace: true })
-        return
-      }
-    }
-  }, [catalog.datasets, catalog.loading, collectionParam, datasetParam, setSearchParams])
-
-  const baseUrl = collection?.available ? collection.baseUrl : null
+  const {
+    catalog,
+    datasetParam,
+    collectionParam,
+    dataset,
+    collection,
+    selectionError,
+    baseUrl,
+    onSelect,
+  } = useCollectionSelection()
   const data = useOrbitData(selectionError ? null : baseUrl)
   const [mode, setMode] = useState<ViewMode>('lidar')
   const [playing, setPlaying] = useState(false)
@@ -224,13 +170,6 @@ export default function Demo() {
   const copyHint =
     'Place exports under web/public/data/nuscenes/scene-0061/ or the legacy path web/public/data/scene-0061/.'
 
-  const onSelectDataset = (id: string, colId: string | null, kind: CollectionKind) => {
-    const next = new URLSearchParams()
-    next.set('dataset', id)
-    if (colId) next.set(collectionQueryKey(kind), colId)
-    setSearchParams(next)
-  }
-
   const sceneLabel = collection?.label ?? collectionParam ?? '—'
   const overlayError = selectionError || catalog.error
 
@@ -259,7 +198,7 @@ export default function Demo() {
           loading={catalog.loading}
           datasetId={datasetParam}
           collectionId={collectionParam}
-          onSelect={onSelectDataset}
+          onSelect={onSelect}
         />
       </div>
 

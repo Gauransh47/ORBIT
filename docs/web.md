@@ -51,9 +51,10 @@ Landing sketches are labeled conceptual. They are not scene-0061 output.
 2. **Landing** — cinematic hero, glance cards, scroll pipeline,
    conceptual demo / map / planning previews, tech foundation.
 3. **Exporter** — real PipelineState JSON (`src/web_export/`).
-4. **Interactive demo (this phase)** — PREV/NEXT explorer from JSON.
-5. **2.5D explorer** — R3F rotate/zoom/views on exported cells.
-6. **Path planning page** — still a planned extension unless the Python
+4. **Interactive demo** — PREV/NEXT explorer from JSON.
+5. **Dataset-aware explorer** — registry, nuScenes / KITTI / synthetic.
+6. **2.5D map explorer (this phase)** — dedicated `/map` adaptive grid.
+7. **Path planning page** — still a planned extension unless the Python
    runtime adds a planner.
 
 Do not invent metrics in the demo once JSON exists.
@@ -71,10 +72,10 @@ Do not invent metrics in the demo once JSON exists.
 
 ## Current website limitations
 
-- The dedicated `/map` page is still a placeholder (Phase 5).
-- The landing hero sketches remain conceptual.
+- The landing hero sketches remain conceptual (not exported JSON).
 - Path planning remains a planned extension.
 - `web/public/data/scene-0061/*.json` is not committed; copy from `exported_data/`.
+- SemanticKITTI and ORBIT Synthetic stay listed as “Not exported yet” until JSON exists.
 
 ## What remains after Phase 3
 
@@ -308,4 +309,83 @@ npm install
 npm run dev
 npm run build
 ```
+
+# Phase 6 — Dedicated 2.5D Adaptive Grid Map Explorer
+
+`/map` is a visualization client for exported adaptive grids. It does not
+run mapping, occupancy, or terrain algorithms in the browser.
+
+## Architecture
+
+```
+datasets.json → probe manifest.json
+        ↓
+manifest.json + trajectory.json (once)
+        ↓
+frame_XXXX.json on demand (FrameCache LRU, 12 frames)
+        ↓
+InstancedMesh of exported adaptive_cells
+```
+
+URL query is the same as Phase 5:
+
+```
+/map?dataset=nuscenes&scene=scene-0061
+/map?dataset=semantic-kitti&sequence=00
+/map?dataset=synthetic&environment=environment-01
+```
+
+Only collections with a real `manifest.json` become selectable. Listed but
+missing exports show **Not exported yet**. No cells, elevations, obstacles,
+or tracks are invented.
+
+## Exported fields visualized
+
+| JSON | Use |
+|------|-----|
+| `adaptive_cells.center` | Cell XY (LiDAR / world XY of that frame) |
+| `adaptive_cells.resolution` | Footprint size (adaptive nature) |
+| `adaptive_cells.semantic_class` | Semantic mode (GROUND / MIXED / OBSTACLE when present) |
+| `adaptive_cells.ground_elevation`, `z_mean` | Terrain height; flat grid if neither is present |
+| `adaptive_cells.obstacle_elevation`, counts, `level`, `ix`/`iy` | Inspector / extrusion when present |
+| `obstacle_cells` | Optional overlay (never synthesized) |
+| `trajectory.json` `samples` | Optional ego trajectory overlay |
+| `tracks`, `world_objects` | Optional object footprints |
+| `world_points` | Optional world cloud overlay |
+| `pose.ego_xy` | Ego marker |
+| `metrics.adaptive_cells`, `live_tracks` | Info strip counts |
+| `world_points_frame` / `manifest.world_frame` | Map frame label (`lidar_frame_0`) |
+
+## Visualization modes
+
+1. **Terrain** — colormap from real elevations; flat fallback if none.
+2. **Semantic** — color by exported `semantic_class` only.
+3. **Resolution** — color by exported `resolution` bins (fine → coarse).
+4. **Obstacles** — highlight cells whose exported class is OBSTACLE / MIXED.
+
+Camera: orbit rotate, zoom, pan, plus Iso / Top / Side presets.
+
+Frame navigation: **− / +**, Previous / Next, optional Play. Not a slider.
+
+## Performance
+
+- On-demand frame fetch; LRU `FrameCache` (12).
+- Adaptive cells rendered as one `InstancedMesh`.
+- Geometries and materials disposed on unmount.
+- World-points overlay is off by default.
+- The `/map` route is lazy-loaded so Three.js is not on every page.
+
+## Missing data
+
+| Condition | UI |
+|-----------|----|
+| Dataset listed, no JSON | “This dataset has not been exported yet.” |
+| Collection unavailable | Error from registry probe; no fake scene |
+| Missing `manifest.json` / frame file | Retryable load error |
+| Empty / missing `adaptive_cells` | “Adaptive grid data is not available for this export.” |
+| No elevation fields | Flat grid + “Elevation unavailable.” |
+| No `trajectory.json` | Trajectory overlay disabled |
+| Empty `obstacle_cells` | Overlay disabled |
+
+Path planning is not part of this phase.
 

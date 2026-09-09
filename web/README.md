@@ -19,6 +19,14 @@ npm run dev
 
 Open http://localhost:5173/demo?dataset=nuscenes&scene=scene-0061
 
+Dedicated 2.5D map explorer: http://localhost:5173/map?dataset=nuscenes&scene=scene-0061
+
+That page visualizes exported `adaptive_cells` (center, resolution,
+semantic_class, elevations). Modes: Terrain, Semantic, Resolution,
+Obstacles. Frame loading uses the same on-demand LRU cache as `/demo`.
+Datasets without JSON stay **Not exported yet**. The browser does not
+run mapping algorithms.
+
 ```bash
 npm run build
 npm run preview

@@ -14,9 +14,9 @@ export default function MapPreview() {
         <div>
           <p className="text-sm leading-7 text-orbit-dim">
             Near the sensor, cells are small. Farther out they coarsen. Heights
-            come from ground inliers. The explorer on the next page will rotate
-            a real exported grid after Phase 3; this panel is a schematic you
-            can tilt with the cursor.
+            come from exported ground elevation when present. The dedicated
+            explorer at /map visualizes real adaptive_cells from PipelineState
+            JSON. This panel remains a schematic you can tilt with the cursor.
           </p>
           <Link
             to="/map"
