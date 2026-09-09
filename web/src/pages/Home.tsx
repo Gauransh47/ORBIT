@@ -40,11 +40,11 @@ export default function Home() {
             &amp; Intelligent Terrain
           </p>
           <p className="mt-6 max-w-lg text-sm leading-7 text-orbit-dim md:text-[0.95rem]">
-            Transforming LiDAR observations into an evolving understanding of
-            terrain, obstacles, objects, and motion.
+            Adaptive variable-resolution 2.5D LiDAR mapping for dynamic environment
+            perception — a prototype toward the intended DRDO/iDEX system.
           </p>
           <p className="mt-3 max-w-lg font-mono text-[11px] leading-5 tracking-wide text-orbit-dim/80">
-            Geometric prototype · LiDAR frame 0 world · not a learned drivability stack
+            Geometric prototype · LiDAR frame 0 world · PointNet++ / Sparse CNN are future work
           </p>
           <div className="mt-10 flex flex-wrap items-center gap-3">
             <Link

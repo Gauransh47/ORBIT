@@ -11,9 +11,8 @@ export default function About() {
       </p>
       <p>
         Dataset backends today are SemanticKITTI / KITTI and nuScenes v1.0-mini
-        (LIDAR_TOP keyframes). The website is a separate presentation layer. It
-        will consume exported JSON from the same pipeline — it does not replace
-        the Matplotlib dashboard.
+        (LIDAR_TOP keyframes). The website visualizes exported JSON from the same
+        pipeline. It does not replace the Matplotlib dashboard.
       </p>
       <p>
         What ORBIT does <em>not</em> currently do: learned semantic segmentation,

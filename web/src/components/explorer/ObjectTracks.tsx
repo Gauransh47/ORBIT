@@ -3,6 +3,13 @@ import { Html } from '@react-three/drei'
 import { orbitToThree } from '../../lib/orbitCoords'
 import type { ProposalRecord, TrackRecord, WorldObjectRecord } from '../../types/orbit'
 
+function footprintColor(motionState: string | undefined, confirmed?: boolean): string {
+  if (motionState === 'MOVING') return '#ff8a3c'
+  if (motionState === 'STATIC') return '#5ee0ff'
+  if (motionState === 'UNCERTAIN' || motionState === 'UNKNOWN') return '#e8c36a'
+  return confirmed ? '#ff8a3c' : '#ffd36a'
+}
+
 function Footprint({
   x,
   y,
@@ -65,15 +72,16 @@ export default function ObjectTracks({
   worldObjects,
   selectedId,
   onSelect,
+  showIds = false,
 }: {
   tracks: TrackRecord[]
   worldObjects: WorldObjectRecord[]
   selectedId: number | null
   onSelect: (id: number | null) => void
+  showIds?: boolean
 }) {
   const trackIds = new Set(tracks.map((t) => t.track_id))
   const extras = worldObjects.filter((o) => !trackIds.has(o.track_id))
-  const labelAll = tracks.length + extras.length <= 40
 
   return (
     <group
@@ -83,6 +91,7 @@ export default function ObjectTracks({
     >
       {tracks.map((track) => {
         const dims = track.dimensions_xy ?? [1.2, 2.4]
+        const showLabel = showIds || selectedId === track.track_id
         return (
           <Footprint
             key={`t-${track.track_id}`}
@@ -90,15 +99,16 @@ export default function ObjectTracks({
             y={track.position[1]}
             width={dims[0] ?? 1.2}
             length={dims[1] ?? 2.4}
-            color={track.confirmed ? '#ff8a3c' : '#ffd36a'}
+            color={footprintColor(track.motion_state, track.confirmed)}
             selected={selectedId === track.track_id}
-            label={labelAll || selectedId === track.track_id ? `#${track.track_id}` : undefined}
+            label={showLabel ? `#${track.track_id}` : undefined}
             onSelect={() => onSelect(track.track_id)}
           />
         )
       })}
       {extras.map((obj) => {
         const dims = obj.dimensions_xy ?? [0.8, 0.8]
+        const showLabel = showIds || selectedId === obj.track_id
         return (
           <Footprint
             key={`w-${obj.track_id}`}
@@ -106,9 +116,9 @@ export default function ObjectTracks({
             y={obj.position[1]}
             width={dims[0] ?? 0.8}
             length={dims[1] ?? 0.8}
-            color="#5ee0ff"
+            color={footprintColor(obj.motion_state, obj.confirmed)}
             selected={selectedId === obj.track_id}
-            label={labelAll || selectedId === obj.track_id ? `W#${obj.track_id}` : undefined}
+            label={showLabel ? `#${obj.track_id}` : undefined}
             onSelect={() => onSelect(obj.track_id)}
           />
         )

@@ -62,6 +62,7 @@ export default function MapExplorer() {
   const [showObstacleCells, setShowObstacleCells] = useState(false)
   const [showWorldPoints, setShowWorldPoints] = useState(false)
   const [showFoveation, setShowFoveation] = useState(true)
+  const [showObjectIds, setShowObjectIds] = useState(false)
 
   const cells = data.frame?.adaptive_cells ?? []
   const obstacleCells = data.frame?.obstacle_cells ?? []
@@ -197,6 +198,7 @@ export default function MapExplorer() {
             showWorldPoints={showWorldPoints && hasWorldPoints}
             showObstacleCells={showObstacleCells && hasObstacleOverlay}
             showFoveation={showFoveation}
+            showObjectIds={showObjectIds}
           />
         </RenderErrorBoundary>
       ) : null}
@@ -325,6 +327,18 @@ export default function MapExplorer() {
                 />
                 Tracked objects
               </label>
+              {hasObjects ? (
+                <label className="mt-2 flex items-center gap-2 text-xs text-orbit-dim">
+                  <input
+                    type="checkbox"
+                    className="accent-orbit-cyan"
+                    checked={showObjectIds}
+                    disabled={!showObjects}
+                    onChange={(e) => setShowObjectIds(e.target.checked)}
+                  />
+                  Show object IDs
+                </label>
+              ) : null}
               <label className={`mt-2 flex items-center gap-2 text-xs ${hasObstacleOverlay ? 'text-orbit-dim' : 'text-orbit-dim/40'}`}>
                 <input
                   type="checkbox"
@@ -367,9 +381,9 @@ export default function MapExplorer() {
             <div className="rounded-2xl border border-orbit-line/80 bg-orbit-bg/80 px-4 py-3 backdrop-blur-md">
               <p className="font-mono text-[10px] tracking-[0.28em] text-orbit-cyan">ADAPTIVE STRUCTURE</p>
               <p className="mt-2 text-[11px] leading-5 text-orbit-dim">
-                ORBIT allocates spatial detail non-uniformly instead of using a uniform grid. Rings
-                mark the actual range extent of each exported resolution around ego — not assumed
-                10 m / 100 m radii.
+                Fine-resolution cells represent higher spatial detail near the sensor. Cell
+                resolution increases with distance where supported by the exported adaptive grid.
+                Rings mark the actual range extent of each exported resolution around ego.
               </p>
               <ul className="mt-2 space-y-1 text-[11px] text-orbit-dim">
                 {foveation.slice(0, 6).map((row) => (

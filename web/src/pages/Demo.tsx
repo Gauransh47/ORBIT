@@ -27,8 +27,19 @@ function selectedDetails(
   const src = track ?? world
   if (!src) return null
   const rows: { k: string; v: string }[] = []
-  rows.push({ k: 'CLASS', v: src.class_name })
-  if (src.motion_state) rows.push({ k: 'MOTION', v: src.motion_state })
+  if (src.track_id !== undefined) rows.push({ k: 'TRACK ID', v: `#${src.track_id}` })
+  if (src.class_name) rows.push({ k: 'EXPORTED CLASS', v: src.class_name })
+  if (src.motion_state) rows.push({ k: 'MOTION STATE', v: src.motion_state })
+  if (track?.velocity_xy && track.velocity_xy.length >= 2) {
+    const vx = track.velocity_xy[0]
+    const vy = track.velocity_xy[1]
+    rows.push({ k: 'VELOCITY XY', v: `${vx.toFixed(3)}, ${vy.toFixed(3)}` })
+    rows.push({ k: 'SPEED', v: `${Math.hypot(vx, vy).toFixed(3)}` })
+  }
+  const hist = track?.motion_history_speed
+  if (hist && hist.length) {
+    rows.push({ k: 'RECENT SPEED SAMPLE', v: hist[hist.length - 1].toFixed(3) })
+  }
   if (src.confidence !== undefined) rows.push({ k: 'CONFIDENCE', v: src.confidence.toFixed(3) })
   if (src.age !== undefined) rows.push({ k: 'AGE', v: String(src.age) })
   if (src.hits !== undefined) rows.push({ k: 'HITS', v: String(src.hits) })
@@ -36,6 +47,8 @@ function selectedDetails(
   if ('confirmed' in src && src.confirmed !== undefined) {
     rows.push({ k: 'CONFIRMED', v: src.confirmed ? 'true' : 'false' })
   }
+  if (track?.first_frame !== undefined) rows.push({ k: 'FIRST FRAME', v: String(track.first_frame) })
+  if (track?.last_frame !== undefined) rows.push({ k: 'LAST FRAME', v: String(track.last_frame) })
   rows.push({
     k: 'POSITION XY',
     v: `${src.position[0].toFixed(2)}, ${src.position[1].toFixed(2)}`,
@@ -44,14 +57,8 @@ function selectedDetails(
   if (dims && dims.length >= 2) {
     rows.push({ k: 'DIMENSIONS XY', v: `${dims[0].toFixed(2)} × ${dims[1].toFixed(2)}` })
   }
-  if (track?.velocity_xy && track.velocity_xy.length >= 2) {
-    rows.push({
-      k: 'VELOCITY XY',
-      v: `${track.velocity_xy[0].toFixed(3)}, ${track.velocity_xy[1].toFixed(3)}`,
-    })
-  }
   if (src.frame) rows.push({ k: 'FRAME', v: src.frame })
-  return { title: `TRACK #${src.track_id}`, rows }
+  return { title: `OBJECT INSPECTOR · #${src.track_id}`, rows }
 }
 
 function modeTitle(mode: ViewMode, frame: { points_frame?: string; world_points_frame?: string }) {
@@ -70,7 +77,7 @@ function modeTitle(mode: ViewMode, frame: { points_frame?: string; world_points_
   if (mode === 'grid') {
     return {
       kicker: 'ADAPTIVE 2.5D GRID',
-      note: 'Cells from this frame’s grid (current LiDAR XY). Geometric class GROUND / MIXED / OBSTACLE.',
+      note: 'Exported adaptive cells. Cool colours are terrain/elevation; warm colours are obstacles. Footprint size is exported resolution.',
     }
   }
   return {
@@ -95,6 +102,7 @@ export default function Demo() {
   const [playing, setPlaying] = useState(false)
   const [showTrajectory, setShowTrajectory] = useState(true)
   const [selectedTrackId, setSelectedTrackId] = useState<number | null>(null)
+  const [showObjectIds, setShowObjectIds] = useState(false)
 
   const caps = useMemo(
     () => inferCapabilities(data.frame, Boolean(data.trajectory?.samples?.length), dataset?.capabilities),
@@ -172,9 +180,10 @@ export default function Demo() {
 
   const sceneLabel = collection?.label ?? collectionParam ?? '—'
   const overlayError = selectionError || catalog.error
+  const hasTrackIds = Boolean((data.frame?.tracks?.length ?? 0) + (data.frame?.world_objects?.length ?? 0))
 
   return (
-    <main className="mx-auto max-w-[1400px] px-4 pb-16 pt-24 md:px-8">
+    <main className="mx-auto max-w-[1400px] overflow-x-hidden px-4 pb-16 pt-24 md:px-8">
       <header className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
         <div>
           <p className="font-mono text-[11px] tracking-[0.32em] text-orbit-cyan">ORBIT EXPLORER</p>
@@ -240,6 +249,7 @@ export default function Demo() {
                 showTrajectory={showTrajectory && Boolean(caps.has_trajectory)}
                 selectedTrackId={selectedTrackId}
                 onSelectTrack={setSelectedTrackId}
+                showObjectIds={showObjectIds}
               />
             </div>
           ) : null}
@@ -286,19 +296,38 @@ export default function Demo() {
           {!availableModes[mode] ? (
             <p className="mt-2 text-xs text-orbit-dim">{modeUnavailableLabel(mode)}</p>
           ) : null}
+          {mode === 'grid' ? (
+            <p className="mt-2 max-w-md text-xs leading-5 text-orbit-dim">
+              Fine-resolution cells represent higher spatial detail near the sensor. Cell
+              resolution increases with distance where supported by the exported adaptive grid.
+            </p>
+          ) : null}
         </div>
-        <label
-          className={`flex items-center gap-3 text-sm ${caps.has_trajectory ? 'text-orbit-dim' : 'text-orbit-dim/40'}`}
-        >
-          <input
-            type="checkbox"
-            checked={showTrajectory && Boolean(caps.has_trajectory)}
-            disabled={!caps.has_trajectory}
-            onChange={(e) => setShowTrajectory(e.target.checked)}
-            className="accent-orbit-cyan"
-          />
-          Show trajectory
-        </label>
+        <div className="flex flex-col gap-3">
+          <label
+            className={`flex items-center gap-3 text-sm ${caps.has_trajectory ? 'text-orbit-dim' : 'text-orbit-dim/40'}`}
+          >
+            <input
+              type="checkbox"
+              checked={showTrajectory && Boolean(caps.has_trajectory)}
+              disabled={!caps.has_trajectory}
+              onChange={(e) => setShowTrajectory(e.target.checked)}
+              className="accent-orbit-cyan"
+            />
+            Show trajectory
+          </label>
+          {hasTrackIds ? (
+            <label className="flex items-center gap-3 text-sm text-orbit-dim">
+              <input
+                type="checkbox"
+                checked={showObjectIds}
+                onChange={(e) => setShowObjectIds(e.target.checked)}
+                className="accent-orbit-cyan"
+              />
+              Show object IDs
+            </label>
+          ) : null}
+        </div>
       </div>
 
       <div className="mt-6">

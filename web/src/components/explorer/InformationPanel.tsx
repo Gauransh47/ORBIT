@@ -84,6 +84,9 @@ export default function InformationPanel({
       {selected ? (
         <div className="mt-8 border-t border-orbit-line pt-4">
           <p className="font-mono text-[10px] tracking-[0.28em] text-orbit-cyan">{selected.title}</p>
+          <p className="mt-1 text-[11px] leading-4 text-orbit-dim">
+            Fields below exist on the exported track or world object. Missing fields are omitted.
+          </p>
           <dl className="mt-2 divide-y divide-orbit-line/80">
             {selected.rows.map((row) => (
               <Row key={row.k} k={row.k} v={row.v} />
@@ -94,7 +97,7 @@ export default function InformationPanel({
         <p className="mt-8 text-xs leading-5 text-orbit-dim">
           Frame {String(frameIndex).padStart(2, '0')}
           {lastIndex !== undefined ? ` / ${String(lastIndex).padStart(2, '0')}` : ''}
-          . Values come from exported JSON only.
+          . Click a tracked object in Objects view to inspect exported fields.
         </p>
       )}
     </aside>
