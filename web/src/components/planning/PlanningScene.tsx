@@ -20,6 +20,7 @@ export default function PlanningScene({
   path,
   start,
   goal,
+  playbackXy,
   selectedIndex,
   onPickCell,
   onPickXy,
@@ -30,17 +31,38 @@ export default function PlanningScene({
   path: [number, number][]
   start: [number, number] | null
   goal: [number, number] | null
+  playbackXy: [number, number] | null
   selectedIndex: number | null
   onPickCell: (index: number) => void
   onPickXy: (xy: [number, number]) => void
 }) {
   const cells = frame.adaptive_cells ?? []
   const focus = useMemo(() => gridFocus(cells), [cells])
-  const markerRadius = Math.min(1.4, Math.max(0.08, focus.radius * 0.04))
+  const markerRadius = Math.min(1.4, Math.max(0.12, focus.radius * 0.035))
   const pathPts = useMemo(() => {
     if (path.length < 2) return null
-    return path.map(([x, y]) => orbitToThree(x, y, 0.35))
+    return path.map(([x, y]) => orbitToThree(x, y, 0.42))
   }, [path])
+  const ticks = useMemo(() => {
+    if (path.length < 2) return []
+    const out: [number, number, number][][] = []
+    const step = Math.max(1, Math.floor(path.length / 12))
+    for (let i = step; i < path.length; i += step) {
+      const [x0, y0] = path[i - 1]
+      const [x1, y1] = path[i]
+      const dx = x1 - x0
+      const dy = y1 - y0
+      const len = Math.hypot(dx, dy) || 1
+      const px = (-dy / len) * markerRadius * 0.6
+      const py = (dx / len) * markerRadius * 0.6
+      out.push([
+        orbitToThree(x1 - dx * 0.4 + px, y1 - dy * 0.4 + py, 0.5),
+        orbitToThree(x1, y1, 0.5),
+        orbitToThree(x1 - dx * 0.4 - px, y1 - dy * 0.4 - py, 0.5),
+      ])
+    }
+    return out
+  }, [path, markerRadius])
 
   return (
     <Canvas
@@ -49,11 +71,12 @@ export default function PlanningScene({
       dpr={[1, 1.5]}
       gl={{ antialias: true, alpha: false }}
       onCreated={({ gl }) => {
-        gl.setClearColor('#07090e')
+        gl.setClearColor('#0b1522')
       }}
     >
-      <ambientLight intensity={0.55} />
-      <directionalLight position={[30, 50, 12]} intensity={1.05} />
+      <ambientLight intensity={0.95} />
+      <directionalLight position={[30, 50, 12]} intensity={1.35} />
+      <hemisphereLight args={['#c8e8ff', '#163028', 0.5]} />
       <OrbitControls makeDefault enableDamping dampingFactor={0.08} />
       <MapCameraRig view={cameraView} cells={cells} />
 
@@ -81,17 +104,27 @@ export default function PlanningScene({
       />
       <MapObstacleCells cells={frame.obstacle_cells ?? []} />
 
-      {pathPts ? <Line points={pathPts} color="#f4f1de" lineWidth={2.4} /> : null}
+      {pathPts ? (
+        <>
+          <Line points={pathPts} color="#0b1522" lineWidth={8} />
+          <Line points={pathPts} color="#ffe566" lineWidth={3.5} />
+        </>
+      ) : null}
+      {ticks.map((pts, i) => (
+        <Line key={i} points={pts} color="#fff4b0" lineWidth={2} />
+      ))}
 
-      {start ? (
-        <EgoMarker xy={start} radius={markerRadius} />
-      ) : (
-        <EgoMarker xy={frame.pose.ego_xy} radius={markerRadius} />
-      )}
+      {start ? <EgoMarker xy={start} radius={markerRadius} /> : null}
       {goal ? (
         <mesh position={orbitToThree(goal[0], goal[1], markerRadius)}>
-          <sphereGeometry args={[markerRadius * 0.85, 16, 16]} />
-          <meshStandardMaterial color="#e08a3c" emissive="#e08a3c" emissiveIntensity={0.25} />
+          <sphereGeometry args={[markerRadius * 0.9, 16, 16]} />
+          <meshStandardMaterial color="#ff6a2c" emissive="#ff6a2c" emissiveIntensity={0.4} />
+        </mesh>
+      ) : null}
+      {playbackXy ? (
+        <mesh position={orbitToThree(playbackXy[0], playbackXy[1], markerRadius * 1.2)}>
+          <sphereGeometry args={[markerRadius * 0.7, 16, 16]} />
+          <meshStandardMaterial color="#f4f1de" emissive="#ffe566" emissiveIntensity={0.5} />
         </mesh>
       ) : null}
     </Canvas>

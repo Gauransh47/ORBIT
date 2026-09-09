@@ -3,6 +3,7 @@ import { Canvas } from '@react-three/fiber'
 import { OrbitControls } from '@react-three/drei'
 import { gridFocus } from '../../lib/cellVisual'
 import type { FrameJson, TrajectoryFile } from '../../types/orbit'
+import FoveationRings from './FoveationRings'
 import MapCameraRig, { type MapCameraView } from './MapCameraRig'
 import MapGrid, { type MapVizMode } from './MapGrid'
 import MapObstacleCells from './MapObstacleCells'
@@ -21,6 +22,7 @@ export default function MapScene({
   showObjects,
   showWorldPoints,
   showObstacleCells,
+  showFoveation,
 }: {
   frame: FrameJson
   mode: MapVizMode
@@ -32,6 +34,7 @@ export default function MapScene({
   showObjects: boolean
   showWorldPoints: boolean
   showObstacleCells: boolean
+  showFoveation: boolean
 }) {
   const cells = frame.adaptive_cells ?? []
   const focus = useMemo(() => gridFocus(cells), [cells])
@@ -44,13 +47,13 @@ export default function MapScene({
       dpr={[1, 1.5]}
       gl={{ antialias: true, alpha: false }}
       onCreated={({ gl }) => {
-        gl.setClearColor('#07090e')
+        gl.setClearColor('#0b1522')
       }}
       onPointerMissed={() => onSelectIndex(null)}
     >
-      <ambientLight intensity={0.5} />
-      <directionalLight position={[30, 50, 12]} intensity={1.05} />
-      <hemisphereLight args={['#8ecae6', '#0b1a14', 0.25]} />
+      <ambientLight intensity={0.95} />
+      <directionalLight position={[30, 50, 12]} intensity={1.35} />
+      <hemisphereLight args={['#c8e8ff', '#163028', 0.55]} />
       <OrbitControls makeDefault enableDamping dampingFactor={0.08} />
       <MapCameraRig view={cameraView} cells={frame.adaptive_cells ?? []} />
 
@@ -74,6 +77,9 @@ export default function MapScene({
           selectedId={null}
           onSelect={() => undefined}
         />
+      ) : null}
+      {showFoveation && frame.pose?.ego_xy ? (
+        <FoveationRings cells={cells} egoXy={frame.pose.ego_xy} />
       ) : null}
       <EgoMarker xy={frame.pose.ego_xy} radius={markerRadius} />
     </Canvas>

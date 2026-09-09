@@ -10,9 +10,11 @@ export default function MapObstacleCells({ cells }: { cells: ObstacleCellRecord[
   const material = useMemo(
     () =>
       new THREE.MeshStandardMaterial({
-        color: '#e08a3c',
+        color: '#ff7a38',
+        emissive: '#ff6a2c',
+        emissiveIntensity: 0.35,
         transparent: true,
-        opacity: 0.55,
+        opacity: 0.72,
         roughness: 0.45,
         metalness: 0.08,
         depthWrite: false,

@@ -1,4 +1,5 @@
 import { DoubleSide } from 'three'
+import { Html } from '@react-three/drei'
 import { orbitToThree } from '../../lib/orbitCoords'
 import type { ProposalRecord, TrackRecord, WorldObjectRecord } from '../../types/orbit'
 
@@ -9,6 +10,7 @@ function Footprint({
   length,
   color,
   selected,
+  label,
   onSelect,
 }: {
   x: number
@@ -17,28 +19,44 @@ function Footprint({
   length: number
   color: string
   selected?: boolean
+  label?: string
   onSelect?: () => void
 }) {
-  const [px, py, pz] = orbitToThree(x, y, 0.04)
-  const w = Math.max(width, 0.4)
-  const l = Math.max(length, 0.4)
+  const [px, py, pz] = orbitToThree(x, y, 0.12)
+  const w = Math.max(width, 0.5)
+  const l = Math.max(length, 0.5)
   return (
-    <mesh
-      position={[px, py, pz]}
-      rotation={[-Math.PI / 2, 0, 0]}
-      onClick={(e) => {
-        e.stopPropagation()
-        onSelect?.()
-      }}
-    >
-      <planeGeometry args={[l, w]} />
-      <meshStandardMaterial
-        color={color}
-        transparent
-        opacity={selected ? 0.9 : 0.55}
-        side={DoubleSide}
-      />
-    </mesh>
+    <group>
+      <mesh
+        position={[px, py, pz]}
+        rotation={[-Math.PI / 2, 0, 0]}
+        onClick={(e) => {
+          e.stopPropagation()
+          onSelect?.()
+        }}
+      >
+        <planeGeometry args={[l, w]} />
+        <meshStandardMaterial
+          color={color}
+          emissive={color}
+          emissiveIntensity={selected ? 0.45 : 0.22}
+          transparent
+          opacity={selected ? 0.95 : 0.78}
+          side={DoubleSide}
+        />
+      </mesh>
+      <mesh position={[px, py + 0.02, pz]} rotation={[-Math.PI / 2, 0, 0]}>
+        <ringGeometry args={[Math.max(l, w) * 0.42, Math.max(l, w) * 0.5, 20]} />
+        <meshBasicMaterial color="#f4f1de" transparent opacity={0.85} side={DoubleSide} />
+      </mesh>
+      {label ? (
+        <Html position={[px, py + 0.45, pz]} center distanceFactor={28}>
+          <span className="rounded bg-black/70 px-1.5 py-0.5 font-mono text-[10px] text-orbit-cyan whitespace-nowrap">
+            {label}
+          </span>
+        </Html>
+      ) : null}
+    </group>
   )
 }
 
@@ -55,6 +73,7 @@ export default function ObjectTracks({
 }) {
   const trackIds = new Set(tracks.map((t) => t.track_id))
   const extras = worldObjects.filter((o) => !trackIds.has(o.track_id))
+  const labelAll = tracks.length + extras.length <= 40
 
   return (
     <group
@@ -71,8 +90,9 @@ export default function ObjectTracks({
             y={track.position[1]}
             width={dims[0] ?? 1.2}
             length={dims[1] ?? 2.4}
-            color={track.confirmed ? '#e08a3c' : '#f0c27a'}
+            color={track.confirmed ? '#ff8a3c' : '#ffd36a'}
             selected={selectedId === track.track_id}
+            label={labelAll || selectedId === track.track_id ? `#${track.track_id}` : undefined}
             onSelect={() => onSelect(track.track_id)}
           />
         )
@@ -86,8 +106,9 @@ export default function ObjectTracks({
             y={obj.position[1]}
             width={dims[0] ?? 0.8}
             length={dims[1] ?? 0.8}
-            color="#3ddcff"
+            color="#5ee0ff"
             selected={selectedId === obj.track_id}
+            label={labelAll || selectedId === obj.track_id ? `W#${obj.track_id}` : undefined}
             onSelect={() => onSelect(obj.track_id)}
           />
         )
@@ -108,7 +129,7 @@ export function ProposalFootprints({ proposals }: { proposals: ProposalRecord[] 
             y={p.center[1]}
             width={p.width ?? 1}
             length={p.length ?? 1}
-            color="#7dd3fc"
+            color="#8ee4ff"
           />
         )
       })}
@@ -121,7 +142,7 @@ export function EgoMarker({ xy, radius = 0.28 }: { xy: [number, number]; radius?
   return (
     <mesh position={[x, y, z]}>
       <coneGeometry args={[radius, radius * 2.5, 8]} />
-      <meshStandardMaterial color="#3ddcff" />
+      <meshStandardMaterial color="#7af0ff" emissive="#3ddcff" emissiveIntensity={0.35} />
     </mesh>
   )
 }

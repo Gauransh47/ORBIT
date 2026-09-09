@@ -31,6 +31,10 @@ export function isRenderableCell(cell: AdaptiveCellRecord | null | undefined): c
 export function cellElevation(cell: AdaptiveCellRecord): number | null {
   if (isFiniteNumber(cell.ground_elevation)) return cell.ground_elevation
   if (isFiniteNumber(cell.z_mean)) return cell.z_mean
+  if (isFiniteNumber(cell.z_min) && isFiniteNumber(cell.z_max)) return (cell.z_min + cell.z_max) * 0.5
+  if (isFiniteNumber(cell.z_min)) return cell.z_min
+  if (isFiniteNumber(cell.z_max)) return cell.z_max
+  if (isFiniteNumber(cell.obstacle_elevation)) return cell.obstacle_elevation
   return null
 }
 
@@ -85,17 +89,17 @@ export function gridFocus(cells: AdaptiveCellRecord[]): {
 }
 
 export function resolutionColor(resolution: number): [number, number, number] {
-  if (resolution <= 0.06) return [0.45, 0.95, 1]
-  if (resolution <= 0.12) return [0.24, 0.86, 0.78]
-  if (resolution <= 0.3) return [0.24, 0.55, 0.95]
-  return [0.35, 0.42, 0.58]
+  if (resolution <= 0.06) return [0.55, 0.98, 1]
+  if (resolution <= 0.12) return [0.35, 0.95, 0.72]
+  if (resolution <= 0.3) return [0.45, 0.62, 1]
+  return [0.78, 0.58, 1]
 }
 
 export function semanticColor(name: string | undefined): [number, number, number] {
-  if (name === 'GROUND') return [0.18, 0.75, 0.6]
-  if (name === 'MIXED') return [0.24, 0.86, 1]
-  if (name === 'OBSTACLE') return [0.88, 0.54, 0.24]
-  return [0.36, 0.42, 0.49]
+  if (name === 'GROUND') return [0.32, 0.92, 0.62]
+  if (name === 'MIXED') return [0.45, 0.88, 1]
+  if (name === 'OBSTACLE') return [1, 0.48, 0.22]
+  return [0.55, 0.62, 0.72]
 }
 
 export function terrainColor(
@@ -103,8 +107,24 @@ export function terrainColor(
   range: { min: number; max: number } | null,
 ): [number, number, number] {
   if (elev == null || !range || range.max === range.min) {
-    return [0.22, 0.55, 0.5]
+    return [0.28, 0.78, 0.72]
   }
-  const t = (elev - range.min) / (range.max - range.min)
-  return [0.12 + t * 0.2, 0.45 + t * 0.45, 0.42 + t * 0.2]
+  const t = Math.min(1, Math.max(0, (elev - range.min) / (range.max - range.min)))
+  const low: [number, number, number] = [0.12, 0.48, 0.95]
+  const mid: [number, number, number] = [0.2, 0.92, 0.58]
+  const high: [number, number, number] = [0.98, 0.88, 0.28]
+  if (t < 0.5) {
+    const u = t * 2
+    return [
+      low[0] + (mid[0] - low[0]) * u,
+      low[1] + (mid[1] - low[1]) * u,
+      low[2] + (mid[2] - low[2]) * u,
+    ]
+  }
+  const u = (t - 0.5) * 2
+  return [
+    mid[0] + (high[0] - mid[0]) * u,
+    mid[1] + (high[1] - mid[1]) * u,
+    mid[2] + (high[2] - mid[2]) * u,
+  ]
 }

@@ -151,6 +151,20 @@ it is done:
    variable vs uniform cost.
 5. Record latency, FPS, memory, and accuracy as first-class outputs.
 
-Until those exist in the tree, describe ORBIT as a **prototype grid
-and geometric perception stack** aimed at the iDEX problem, not as
-the completed expected solution.
+Until those exist in the tree, describe ORBIT as a **prototype /
+proof-of-concept** grid and geometric perception stack aimed at the
+iDEX / DRDO problem, not as the completed expected solution.
+
+The **website** (`web/`) visualizes exported JSON: adaptive 2.5D cells,
+terrain/semantic/resolution/obstacle views, object footprints, and a
+browser A* demonstration. It is not a live ORBIT runtime and does not
+run PointNet++ or sparse CNNs.
+
+### Intended future perception system (not implemented)
+
+Planned future work toward the official problem includes learned
+point-cloud perception approaches such as **PointNet++** and **sparse
+convolutional networks**, for capabilities such as semantic
+segmentation, terrain/drivable classification, static obstacle
+classification, and dynamic object classification. Those models are
+**not** in this repository.
