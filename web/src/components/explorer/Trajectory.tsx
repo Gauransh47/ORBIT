@@ -1,0 +1,31 @@
+import { Line } from '@react-three/drei'
+import { orbitToThree } from '../../lib/orbitCoords'
+import type { TrajectorySample } from '../../types/orbit'
+
+export default function Trajectory({
+  samples,
+  currentIndex,
+}: {
+  samples: TrajectorySample[]
+  currentIndex: number
+}) {
+  if (samples.length < 1) return null
+  const points = samples.map((s) => {
+    const [x, y, z] = orbitToThree(s.ego_xy[0], s.ego_xy[1], 0.05)
+    return [x, y, z] as [number, number, number]
+  })
+  const current = samples.find((s) => s.frame_index === currentIndex) ?? samples[0]
+  const [cx, cy, cz] = orbitToThree(current.ego_xy[0], current.ego_xy[1], 0.2)
+
+  return (
+    <group>
+      {points.length >= 2 ? (
+        <Line points={points} color="#3ddcff" lineWidth={1.6} transparent opacity={0.85} />
+      ) : null}
+      <mesh position={[cx, cy, cz]}>
+        <sphereGeometry args={[0.35, 16, 16]} />
+        <meshStandardMaterial color="#e08a3c" emissive="#e08a3c" emissiveIntensity={0.2} />
+      </mesh>
+    </group>
+  )
+}

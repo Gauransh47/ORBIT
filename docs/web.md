@@ -50,8 +50,8 @@ Landing sketches are labeled conceptual. They are not scene-0061 output.
 1. **Foundation** — Vite app, theme, nav, routes, placeholders.
 2. **Landing** — cinematic hero, glance cards, scroll pipeline,
    conceptual demo / map / planning previews, tech foundation.
-3. **Exporter (this phase)** — real PipelineState JSON (`src/web_export/`).
-4. **Interactive demo** — PREV/NEXT, titled views from JSON.
+3. **Exporter** — real PipelineState JSON (`src/web_export/`).
+4. **Interactive demo (this phase)** — PREV/NEXT explorer from JSON.
 5. **2.5D explorer** — R3F rotate/zoom/views on exported cells.
 6. **Path planning page** — still a planned extension unless the Python
    runtime adds a planner.
@@ -71,9 +71,14 @@ Do not invent metrics in the demo once JSON exists.
 
 ## Current website limitations
 
-- Demo and map pages are still placeholders (Phase 4 / 5).
-- The landing hero and sketches are conceptual, not exported PipelineState.
+- The dedicated `/map` page is still a placeholder (Phase 5).
+- The landing hero sketches remain conceptual.
 - Path planning remains a planned extension.
+- `web/public/data/scene-0061/*.json` is not committed; copy from `exported_data/`.
+
+## What remains after Phase 3
+
+Interactive Demo is implemented in Phase 4 below.
 
 # Phase 3 — Real Data Export
 
@@ -183,7 +188,59 @@ the JSON array length. Adaptive cells are written in full (no cell downsample).
 - Invented 3D boxes, GT classes, or path-planning routes
 - nuScenes `sample_annotation` (the loader never reads it)
 
-## What remains for Phase 4
+# Phase 4 — Interactive ORBIT Explorer
 
-Load these JSON files in the Interactive Demo (PREV/NEXT, titled views).
-Do not invent metrics if a file is missing.
+`/demo` is a visualization client. It does not execute perception, mapping,
+tracking, or the world model.
+
+## Architecture
+
+```
+web/public/data/scene-0061/manifest.json     (fetched once)
+web/public/data/scene-0061/trajectory.json   (fetched once)
+web/public/data/scene-0061/frame_XXXX.json   (fetched on demand, LRU cache)
+        ↓
+React + R3F explorer
+```
+
+Copy:
+
+```bash
+mkdir -p web/public/data/scene-0061
+cp exported_data/scene-0061/*.json web/public/data/scene-0061/
+cd web && npm run dev
+```
+
+Open http://localhost:5173/demo
+
+Other scenes: `/demo?scene=<id>` → `/data/<id>/manifest.json`.
+
+## Data loading and cache
+
+1. Fetch `manifest.json`.
+2. Fetch `trajectory.json` if present.
+3. Fetch only the current frame JSON.
+4. `FrameCache` keeps the last 12 frames in memory (LRU). Revisit uses cache.
+
+Frames are never imported into the Vite bundle.
+
+## Visualization modes
+
+| Mode | JSON fields |
+|------|-------------|
+| LiDAR | `points` (`points_frame`), proposal footprints from `proposals` (XY + width/length) |
+| World | `world_points`, ego from `pose.ego_xy`, optional `trajectory.samples` |
+| Adaptive Grid | `adaptive_cells` (`center`, `resolution`, `semantic_class`, elevations) |
+| Objects | `tracks` and extra `world_objects` as ground-plane footprints (`position`, `dimensions_xy`) |
+
+No invented 3D AABBs. Grid cells are in the current LiDAR XY of that frame.
+
+## Local
+
+```bash
+cd web
+npm install
+npm run dev
+npm run build
+```
+

@@ -13,9 +13,9 @@ export default function DemoPreview() {
   return (
     <Section kicker="INTERACTIVE ORBIT DEMO" title="Frame-by-frame exploration of the system.">
       <p className="max-w-2xl text-sm leading-7 text-orbit-dim">
-        The demo will play exported PipelineState: current scan, world trajectory,
-        adaptive cells, tracks, and real metrics. The panels below are sample
-        sketches so the layout can exist before Phase 3 export.
+        The Interactive Demo is the ORBIT Explorer: it fetches exported
+        scene JSON at runtime. The panels below are still conceptual sketches,
+        not the live Three.js views.
       </p>
       <div className="mt-8 grid gap-4 md:grid-cols-2">
         {panels.map((p) => (
