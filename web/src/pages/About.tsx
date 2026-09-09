@@ -17,8 +17,10 @@ export default function About() {
       </p>
       <p>
         What ORBIT does <em>not</em> currently do: learned semantic segmentation,
-        PointNet++, sparse CNN inference, or a finished path planner. Path
-        planning on this site is labeled as a planned extension.
+        PointNet++, or sparse CNN inference. Those remain planned future work
+        toward the intended DRDO/iDEX system. The website can run a browser A*
+        demonstration on exported occupancy; that is not the Python ORBIT
+        runtime planner.
       </p>
     </PageShell>
   )

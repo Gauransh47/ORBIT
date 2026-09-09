@@ -38,7 +38,9 @@ export default function DatasetExplorer({
                   const first = ds.collections.find((c) => c.available)
                   onSelect(ds.id, first?.id ?? null, ds.collection_label)
                 }}
-                className={`max-w-[16rem] rounded-2xl px-4 py-3 text-left ${
+                className={`rounded-2xl px-3 py-2 text-left ${
+                  compact ? 'max-w-[11rem]' : 'max-w-[16rem] px-4 py-3'
+                } ${
                   active
                     ? 'bg-orbit-cyan/12 ring-1 ring-orbit-cyan/50'
                     : 'ring-1 ring-orbit-line hover:ring-orbit-cyan/30'

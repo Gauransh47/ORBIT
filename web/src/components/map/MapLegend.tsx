@@ -1,37 +1,63 @@
 import type { MapVizMode } from './MapGrid'
 
+function fmtRes(meters: number): string {
+  if (meters < 1) return `${Math.round(meters * 100)} cm`
+  return `${meters.toFixed(2)} m`
+}
+
 export default function MapLegend({
   mode,
   hasElevation,
   hasObstacles,
+  resolutions,
+  semanticClasses,
 }: {
   mode: MapVizMode
   hasElevation: boolean
   hasObstacles: boolean
+  resolutions?: number[]
+  semanticClasses?: string[]
 }) {
+  const resRows = (resolutions ?? []).map((r, i, arr) => {
+    const colors = ['#8cf8ff', '#59f2b8', '#739cff', '#c7a6ff']
+    const rank =
+      arr.length === 1
+        ? 'Exported'
+        : i === 0
+          ? 'Finest'
+          : i === arr.length - 1
+            ? 'Coarsest'
+            : i === 1
+              ? 'Finer'
+              : 'Coarser'
+    return { c: colors[Math.min(i, colors.length - 1)], t: `${rank} · ${fmtRes(r)}` }
+  })
+
+  const semanticRows = [
+    { id: 'GROUND', c: '#52ea9e', t: 'GROUND' },
+    { id: 'MIXED', c: '#73e0ff', t: 'MIXED' },
+    { id: 'OBSTACLE', c: '#ff7a38', t: 'OBSTACLE' },
+  ].filter((row) => !semanticClasses?.length || semanticClasses.includes(row.id))
+
   const rows =
     mode === 'semantic'
-      ? [
-          { c: '#2fbf9a', t: 'GROUND' },
-          { c: '#3ddcff', t: 'MIXED' },
-          { c: '#e08a3c', t: 'OBSTACLE' },
-        ]
+      ? semanticRows.length
+        ? semanticRows
+        : [{ c: '#8a93a3', t: 'No semantic_class values in this export' }]
       : mode === 'resolution'
-        ? [
-            { c: '#73f2ff', t: 'Fine (~5 cm)' },
-            { c: '#3ddcc7', t: 'Medium (~10 cm)' },
-            { c: '#3d8cf2', t: 'Coarse (~25 cm)' },
-            { c: '#596b94', t: 'Coarsest (~50 cm)' },
-          ]
+        ? resRows.length
+          ? resRows
+          : [{ c: '#8a93a3', t: 'No exported resolution values' }]
         : mode === 'obstacles'
           ? [
-              { c: '#e08a3c', t: 'Obstacle cells' },
-              { c: '#c4a574', t: 'Mixed cells' },
-              { c: '#1a3030', t: 'Other cells' },
+              { c: '#ff6a2c', t: 'Obstacle cells' },
+              { c: '#e8c36a', t: 'Mixed cells' },
+              { c: '#3d6f6a', t: 'Other exported cells' },
             ]
           : [
-              { c: '#2fbf9a', t: hasElevation ? 'Lower elevation' : 'Adaptive cells (flat)' },
-              { c: '#7ee0b8', t: hasElevation ? 'Higher elevation' : 'No elevation in export' },
+              { c: '#1f7af2', t: hasElevation ? 'Lower elevation' : 'Adaptive cells (flat)' },
+              { c: '#33eb94', t: hasElevation ? 'Mid elevation' : 'No elevation variation' },
+              { c: '#fae047', t: hasElevation ? 'Higher elevation' : 'No elevation in export' },
             ]
 
   return (
@@ -40,13 +66,15 @@ export default function MapLegend({
       <ul className="mt-3 space-y-2">
         {rows.map((row) => (
           <li key={row.t} className="flex items-center gap-2 text-xs text-orbit-dim">
-            <span className="h-2 w-2 rounded-sm" style={{ background: row.c }} />
+            <span className="h-2 w-2 shrink-0 rounded-sm" style={{ background: row.c }} />
             {row.t}
           </li>
         ))}
       </ul>
       <p className="mt-3 text-[11px] leading-5 text-orbit-dim">
-        Cell footprint is the exported resolution. Fine cells are smaller; coarse cells are larger.
+        {mode === 'resolution'
+          ? 'Smaller footprints are higher spatial detail. Larger footprints are coarser. Sizes come from exported resolution.'
+          : 'Cell footprint is the exported resolution. Fine cells are smaller; coarse cells are larger.'}
       </p>
       {mode === 'obstacles' && !hasObstacles ? (
         <p className="mt-2 text-[11px] leading-5 text-orbit-dim">No obstacle cells in this frame export.</p>

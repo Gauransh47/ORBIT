@@ -1,7 +1,9 @@
 # ORBIT documentation
 
-ORBIT is a research prototype toward an iDEX / DRDO Smart Vehicles
-problem: **adaptive variable-resolution 2.5D LiDAR mapping**.
+ORBIT is a **prototype / proof-of-concept** toward an iDEX / DRDO Smart
+Vehicles problem: **adaptive variable-resolution 2.5D LiDAR mapping**.
+Learned LiDAR perception (PointNet++, sparse CNNs) is intended future
+work, not current code.
 
 These documents separate **what the official problem asks for** from
 **what this repository actually implements**. Intended capabilities

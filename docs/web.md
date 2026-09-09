@@ -54,8 +54,8 @@ Landing sketches are labeled conceptual. They are not scene-0061 output.
 4. **Interactive demo** — PREV/NEXT explorer from JSON.
 5. **Dataset-aware explorer** — registry, nuScenes / KITTI / synthetic.
 6. **2.5D map explorer** — dedicated `/map` adaptive grid.
-7. **Path planning demonstration (this phase)** — website A* on exported cells.
-8. **Visual polish** — contrast, lighting, legends (not this phase).
+7. **Path planning demonstration** — website A* on exported cells.
+8. **Visual polish, layout, metrics, planning UX (this phase)** — contrast, foveation overlay, Locate path, route playback, honest metrics.
 
 Do not invent metrics in the demo once JSON exists.
 
@@ -75,10 +75,12 @@ Do not invent metrics in the demo once JSON exists.
 - The landing hero sketches remain conceptual (not exported JSON).
 - Path planning on `/planning` is a **website A\* demonstration**, not a Python
   ORBIT runtime planner.
-- Visual contrast / color grading is deferred to Phase 8.
+- `/map` and `/planning` overlay chrome scrolls so controls stay reachable.
+- Honest export metrics (counts and ratios) appear only when JSON fields exist.
 - `web/public/data/**/*.json` (except `datasets.json`) is not committed; copy
   from `exported_data/`.
 - SemanticKITTI stays listed as “Not exported yet” until JSON exists.
+- PointNet++ / sparse CNN perception is **not** implemented in this prototype.
 
 ## What remains after Phase 3
 
@@ -466,10 +468,61 @@ overlook.
 - Render error boundary.
 - Label one-frame exports.
 
-Visual contrast / black cells vs blue background is **not** changed here
-(Phase 8).
-
 Copy synthetic JSON (gitignored) to `web/public/data/synthetic/` so
 `/map?dataset=synthetic&environment=environment-01` can probe `manifest.json`.
+
+# Phase 8 — Prototype completion, visual polish, planning UX
+
+The website remains a **visualization and demonstration client** for exported
+ORBIT JSON. This phase does not change the Python perception pipeline.
+
+## Layout
+
+`/map` and `/planning` use `ExplorerChrome`: a full-viewport Three.js canvas
+with overlay panels that scroll (`overflow-y-auto`, `max-height` relative to
+`svh`). Side controls and the bottom status/frame bar stay reachable at typical
+desktop heights (including ~1366×768). Shorter viewports scroll the chrome
+instead of clipping it.
+
+## Visualization
+
+Terrain, semantic, resolution, and obstacle views colour **exported** cells
+only (`ground_elevation` / `z_mean` / `z_min` / `z_max` / `obstacle_elevation`,
+`semantic_class`, `resolution`, `obstacle_count`, `obstacle_cells`). No invented
+classes or obstacles.
+
+An optional **adaptive structure** overlay draws ego and range rings at the
+**actual** max range of each exported resolution around ego. It does not assume
+fixed 10 m / 100 m radii unless those extents exist in the cells.
+
+## Planning UX
+
+Start and destination are chosen first. A* runs only after **Locate path**.
+Status strings include PATH FOUND, NO PATH AVAILABLE, START BLOCKED,
+DESTINATION BLOCKED, WAITING FOR START, WAITING FOR DESTINATION.
+
+A found route is the A* waypoint polyline (plus start/goal markers and optional
+direction ticks). **Play route** animates a marker along that polyline and is
+labeled as path playback visualization — not live driving.
+
+## Honest metrics
+
+Shown only from export fields, for example:
+
+| Label | Source |
+|-------|--------|
+| INPUT POINTS | `metrics.input_points` or `point_count_full` or `mapped_points` |
+| POINT-TO-CELL RATIO | input points ÷ adaptive cell count, when both exist |
+| RESOLUTION LEVELS | unique exported `resolution` values |
+| FINE / COARSE | counts at min and max unique resolutions |
+| LIVE TRACKS | `metrics.live_tracks` or `tracks.length` |
+
+No FPS, latency, accuracy, or fabricated savings.
+
+## Prototype vs planned perception
+
+This repository is a **prototype / proof-of-concept** toward the intended
+DRDO/iDEX system. PointNet++ and sparse CNN semantic perception are
+**planned future work**, not present in the Python pipeline or the website.
 
 

@@ -306,3 +306,40 @@ export function planPath(
     note: 'A* on exported adaptive GROUND cells. Not an ORBIT runtime planner.',
   }
 }
+
+export function pointAlongPath(path: [number, number][], t: number): [number, number] | null {
+  if (path.length === 0) return null
+  if (path.length === 1) return path[0]
+  const clamped = Math.min(1, Math.max(0, t))
+  let total = 0
+  const segs: number[] = []
+  for (let i = 1; i < path.length; i++) {
+    const d = Math.hypot(path[i][0] - path[i - 1][0], path[i][1] - path[i - 1][1])
+    segs.push(d)
+    total += d
+  }
+  if (total <= 0) return path[path.length - 1]
+  let remain = clamped * total
+  for (let i = 0; i < segs.length; i++) {
+    if (remain <= segs[i] || i === segs.length - 1) {
+      const u = segs[i] <= 0 ? 1 : remain / segs[i]
+      return [
+        path[i][0] + (path[i + 1][0] - path[i][0]) * u,
+        path[i][1] + (path[i + 1][1] - path[i][1]) * u,
+      ]
+    }
+    remain -= segs[i]
+  }
+  return path[path.length - 1]
+}
+
+export function planStatusLabel(status: PlanStatus): string {
+  if (status === 'ready') return 'PATH FOUND'
+  if (status === 'no-path') return 'NO PATH AVAILABLE'
+  if (status === 'blocked-start') return 'START BLOCKED'
+  if (status === 'blocked-goal') return 'DESTINATION BLOCKED'
+  if (status === 'no-start') return 'WAITING FOR START'
+  if (status === 'no-goal') return 'WAITING FOR DESTINATION'
+  if (status === 'no-grid') return 'NO GRID'
+  return 'IDLE'
+}

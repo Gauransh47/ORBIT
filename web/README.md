@@ -27,8 +27,18 @@ only (full JSON is unchanged).
 
 Path planning: http://localhost:5173/planning?dataset=nuscenes&scene=scene-0061
 
-`/planning` runs website-side A* on exported GROUND cells. It does not claim
-an ORBIT runtime planner.
+`/planning` is a **browser A\* demonstration** on exported GROUND cells.
+Choose Start, then Destination, then Locate path. Route playback visualizes
+that computed path only. It is not the Python ORBIT runtime planner and not
+live vehicle control.
+
+The map explorer includes honest export metrics (point/cell counts, resolution
+distribution) when those fields exist. It does not invent FPS, latency, or
+model accuracy.
+
+This website is a prototype visualization client for the intended DRDO/iDEX
+system. PointNet++ and sparse CNN perception are planned future work and are
+not implemented.
 
 Synthetic export (one frame, often >100k cells):
 

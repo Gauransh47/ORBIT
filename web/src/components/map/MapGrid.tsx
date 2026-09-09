@@ -36,9 +36,9 @@ function colorFor(
     return c
   }
   if (mode === 'obstacles') {
-    if (cell.semantic_class === 'OBSTACLE') c.set('#e08a3c')
-    else if (cell.semantic_class === 'MIXED') c.set('#c4a574')
-    else c.set('#1a3030')
+    if (cell.semantic_class === 'OBSTACLE' || (cell.obstacle_count ?? 0) > 0) c.set('#ff6a2c')
+    else if (cell.semantic_class === 'MIXED') c.set('#e8c36a')
+    else c.set('#3d8f82')
     return c
   }
   const [r, g, b] = terrainColor(cellElevation(cell), range)
@@ -61,10 +61,8 @@ export default function MapGrid({
   const geometry = useMemo(() => new THREE.BoxGeometry(1, 1, 1), [])
   const material = useMemo(
     () =>
-      new THREE.MeshStandardMaterial({
+      new THREE.MeshLambertMaterial({
         vertexColors: true,
-        roughness: 0.62,
-        metalness: 0.04,
       }),
     [],
   )
@@ -87,8 +85,8 @@ export default function MapGrid({
           : null
       const thickness =
         obstacleTop != null
-          ? Math.max(0.05, Math.abs(obstacleTop - elev))
-          : Math.max(0.05, res * 0.22)
+          ? Math.max(0.08, Math.abs(obstacleTop - elev))
+          : Math.max(0.08, res * 0.28)
       const [x, y, z] = orbitToThree(cell.center[0], cell.center[1], elev)
       if (![x, y, z, res, thickness].every((v) => Number.isFinite(v))) continue
       dummy.position.set(x, y + thickness / 2, z)
