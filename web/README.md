@@ -1,7 +1,9 @@
-# ORBIT website (Phase 1)
+# ORBIT website
 
 Separate React application. It does **not** replace
 `src/visualization/dashboard.py`.
+
+Phase 2 is the immersive landing experience. Real PipelineState JSON is Phase 3.
 
 ## Local
 
@@ -28,9 +30,9 @@ Output directory: `dist`
 
 SPA rewrites are in `vercel.json`.
 
-Exported JSON (later) should be copied to `web/public/data/` for static hosting.
+Exported JSON (Phase 3+) should be copied to `web/public/data/` for static hosting.
 
 ## Stack
 
-React, TypeScript, Vite, Tailwind, Framer Motion.
-Three.js / R3F / Recharts are installed for later phases.
+React, TypeScript, Vite, Tailwind, Framer Motion, Canvas hero.
+Three.js / R3F / Recharts remain installed for later phases.

@@ -10,9 +10,9 @@ export default function Demo() {
         tracks, and metrics.
       </p>
       <p>
-        Phase 1 does not render fake metrics. Export + playback land in a later
-        phase, after <code className="text-orbit-cyan">web_export</code> writes
-        JSON under <code className="text-orbit-cyan">exported_data/</code>.
+        Phase 2 does not invent metrics. Real JSON playback is Phase 4, after
+        the Phase 3 <code className="text-orbit-cyan">web_export</code> writer
+        dumps PipelineState under <code className="text-orbit-cyan">exported_data/</code>.
       </p>
       <Link to="/" className="inline-block text-orbit-cyan">
         ← Back to home

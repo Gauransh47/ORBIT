@@ -4,9 +4,9 @@ export default function MapExplorer() {
   return (
     <PageShell kicker="2.5D MAP" title="Adaptive grid explorer (next phase)">
       <p>
-        A dedicated Three.js view of AdaptiveCell centres, resolutions, and
+        Phase 5: a dedicated Three.js view of AdaptiveCell centres, resolutions, and
         geometric class will live here: rotate, zoom, pan, reset, top /
-        isometric / side cameras.
+        isometric / side cameras. Phase 3 must export the cells first.
       </p>
       <p>
         Data will come from exported cells only. Fine rings (5 cm) and coarse
