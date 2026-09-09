@@ -56,8 +56,8 @@ export default function MapLegend({
             ]
           : [
               { c: '#1f7af2', t: hasElevation ? 'Lower elevation' : 'Adaptive cells (flat)' },
-              { c: '#33eb94', t: hasElevation ? 'Mid elevation' : 'No elevation variation' },
-              { c: '#fae047', t: hasElevation ? 'Higher elevation' : 'No elevation in export' },
+              { c: '#33d4c4', t: hasElevation ? 'Mid elevation' : 'No elevation variation' },
+              { c: '#8cf4b2', t: hasElevation ? 'Higher elevation' : 'No elevation in export' },
             ]
 
   return (
@@ -73,8 +73,8 @@ export default function MapLegend({
       </ul>
       <p className="mt-3 text-[11px] leading-5 text-orbit-dim">
         {mode === 'resolution'
-          ? 'Smaller footprints are higher spatial detail. Larger footprints are coarser. Sizes come from exported resolution.'
-          : 'Cell footprint is the exported resolution. Fine cells are smaller; coarse cells are larger.'}
+          ? 'Smaller footprints are higher spatial detail, typically nearer the sensor. Larger footprints are coarser. Sizes come from exported resolution.'
+          : 'Fine-resolution cells represent higher spatial detail near the sensor. Cell resolution increases with distance where the export supports it.'}
       </p>
       {mode === 'obstacles' && !hasObstacles ? (
         <p className="mt-2 text-[11px] leading-5 text-orbit-dim">No obstacle cells in this frame export.</p>

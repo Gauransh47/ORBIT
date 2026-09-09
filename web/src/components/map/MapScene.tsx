@@ -23,6 +23,7 @@ export default function MapScene({
   showWorldPoints,
   showObstacleCells,
   showFoveation,
+  showObjectIds,
 }: {
   frame: FrameJson
   mode: MapVizMode
@@ -35,6 +36,7 @@ export default function MapScene({
   showWorldPoints: boolean
   showObstacleCells: boolean
   showFoveation: boolean
+  showObjectIds?: boolean
 }) {
   const cells = frame.adaptive_cells ?? []
   const focus = useMemo(() => gridFocus(cells), [cells])
@@ -76,6 +78,7 @@ export default function MapScene({
           worldObjects={frame.world_objects ?? []}
           selectedId={null}
           onSelect={() => undefined}
+          showIds={Boolean(showObjectIds)}
         />
       ) : null}
       {showFoveation && frame.pose?.ego_xy ? (

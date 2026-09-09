@@ -89,17 +89,17 @@ export function gridFocus(cells: AdaptiveCellRecord[]): {
 }
 
 export function resolutionColor(resolution: number): [number, number, number] {
-  if (resolution <= 0.06) return [0.55, 0.98, 1]
-  if (resolution <= 0.12) return [0.35, 0.95, 0.72]
-  if (resolution <= 0.3) return [0.45, 0.62, 1]
-  return [0.78, 0.58, 1]
+  if (resolution <= 0.06) return [0.45, 0.96, 1]
+  if (resolution <= 0.12) return [0.28, 0.9, 0.78]
+  if (resolution <= 0.3) return [0.38, 0.62, 0.95]
+  return [0.58, 0.7, 0.86]
 }
 
 export function semanticColor(name: string | undefined): [number, number, number] {
   if (name === 'GROUND') return [0.32, 0.92, 0.62]
   if (name === 'MIXED') return [0.45, 0.88, 1]
   if (name === 'OBSTACLE') return [1, 0.48, 0.22]
-  return [0.55, 0.62, 0.72]
+  return [0.42, 0.78, 0.82]
 }
 
 export function terrainColor(
@@ -107,12 +107,12 @@ export function terrainColor(
   range: { min: number; max: number } | null,
 ): [number, number, number] {
   if (elev == null || !range || range.max === range.min) {
-    return [0.28, 0.78, 0.72]
+    return [0.32, 0.82, 0.8]
   }
   const t = Math.min(1, Math.max(0, (elev - range.min) / (range.max - range.min)))
-  const low: [number, number, number] = [0.12, 0.48, 0.95]
-  const mid: [number, number, number] = [0.2, 0.92, 0.58]
-  const high: [number, number, number] = [0.98, 0.88, 0.28]
+  const low: [number, number, number] = [0.16, 0.42, 0.95]
+  const mid: [number, number, number] = [0.2, 0.86, 0.78]
+  const high: [number, number, number] = [0.55, 0.96, 0.7]
   if (t < 0.5) {
     const u = t * 2
     return [

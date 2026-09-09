@@ -27,11 +27,13 @@ ORBIT/
     ...
   tests/                 # pytest modules (src/ must be on PYTHONPATH)
   web/                   # React / Vite site (separate from dashboard)
+  assets/screenshots/    # public prototype screenshots
+  submission/            # PPT / demo-video placeholders (no invented links)
   exported_data/         # JSON dumps for the website (not committed)
   data/                  # gitignored; not shipped
 ```
 
-There is no `pyproject.toml`, `setup.py`, or root `README`.
+There is no `pyproject.toml` or `setup.py`.
 `src/` is not an installed package; scripts prepend `src` to
 `sys.path` or expect `PYTHONPATH=src` from the repo root.
 

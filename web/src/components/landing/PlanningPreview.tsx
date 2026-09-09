@@ -2,7 +2,7 @@ import { Link } from 'react-router-dom'
 import Section from '../Section'
 import { RouteSketch } from './sketches'
 
-const steps = ['Start', 'Terrain understanding', 'Obstacle avoidance', 'Traversability', 'Route']
+const steps = ['Start', 'Destination', 'Locate path', 'Route if found', 'Path playback']
 
 export default function PlanningPreview() {
   return (

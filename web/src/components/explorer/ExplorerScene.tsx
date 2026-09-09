@@ -14,6 +14,7 @@ export default function ExplorerScene({
   showTrajectory,
   selectedTrackId,
   onSelectTrack,
+  showObjectIds,
 }: {
   frame: FrameJson
   mode: ViewMode
@@ -21,6 +22,7 @@ export default function ExplorerScene({
   showTrajectory: boolean
   selectedTrackId: number | null
   onSelectTrack: (id: number | null) => void
+  showObjectIds?: boolean
 }) {
   return (
     <Canvas
@@ -29,12 +31,13 @@ export default function ExplorerScene({
       dpr={[1, 1.5]}
       gl={{ antialias: true, alpha: false }}
       onCreated={({ gl }) => {
-        gl.setClearColor('#07090e')
+        gl.setClearColor('#0b1522')
       }}
     >
-      <ambientLight intensity={0.55} />
-      <directionalLight position={[20, 40, 10]} intensity={0.85} />
-      <gridHelper args={[120, 48, '#243044', '#151b24']} />
+      <ambientLight intensity={0.95} />
+      <directionalLight position={[30, 50, 12]} intensity={1.25} />
+      <hemisphereLight args={['#c8e8ff', '#163028', 0.5]} />
+      <gridHelper args={[120, 48, '#1c3348', '#0f1a24']} />
       <OrbitControls makeDefault enableDamping dampingFactor={0.08} maxDistance={180} minDistance={4} />
 
       {mode === 'lidar' ? (
@@ -68,6 +71,7 @@ export default function ExplorerScene({
             worldObjects={frame.world_objects ?? []}
             selectedId={selectedTrackId}
             onSelect={onSelectTrack}
+            showIds={Boolean(showObjectIds)}
           />
           <EgoMarker xy={frame.pose.ego_xy} />
         </>

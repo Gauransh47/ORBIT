@@ -57,8 +57,18 @@ Dataset registry: `web/public/data/datasets.json` (see `docs/web.md` Phase 5).
 
 ## Vercel
 
-Root directory: `web`. Copy exported JSON into `web/public/data/` so
-`/data/datasets.json` and scene manifests are static files.
+In the Vercel project:
+
+| Setting | Value |
+|---------|--------|
+| Root directory | `web` |
+| Build command | `npm run build` |
+| Output directory | `dist` |
+| Environment variables | none |
+
+`vercel.json` rewrites unmatched routes to `index.html` (`/`, `/demo`, `/map`, `/planning`).
+
+Committed static data is only `public/data/datasets.json` plus the small `scene-fixture` export when present. Full scene JSON is gitignored. Collections without `manifest.json` show **Not exported yet**. To demo a full scene locally, copy exporter output into `public/data/` as above.
 
 ## Stack
 

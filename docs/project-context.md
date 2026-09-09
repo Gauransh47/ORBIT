@@ -155,6 +155,18 @@ Until those exist in the tree, describe ORBIT as a **prototype /
 proof-of-concept** grid and geometric perception stack aimed at the
 iDEX / DRDO problem, not as the completed expected solution.
 
+### Compact status vs official statement
+
+**Implemented / demonstrated:** adaptive variable-resolution 2.5D mapping;
+elevation-aware cells; LiDAR-derived processing; geometric terrain/ground;
+obstacle representation; exported tracking/object visualization; interactive
+visualization; dataset-aware exploration; browser A* demonstration; count-based
+export metrics.
+
+**Future work:** learned semantic segmentation; PointNet++; Sparse CNN;
+learned terrain/drivable classification; production runtime planning; live
+vehicle integration; formal latency/FPS, memory, and accuracy evaluation.
+
 The **website** (`web/`) visualizes exported JSON: adaptive 2.5D cells,
 terrain/semantic/resolution/obstacle views, object footprints, and a
 browser A* demonstration. It is not a live ORBIT runtime and does not

@@ -9,16 +9,16 @@ const stages = [
   'Object proposals',
   'Tracking',
   'World model',
-  'Navigation / path planning (planned)',
+  'Website A* planning demonstration (not Python runtime)',
 ]
 
 export default function Pipeline() {
   return (
     <PageShell kicker="PIPELINE" title="How a frame becomes a world model">
       <p>
-        Each processed frame follows the same geometric path. Navigation is
-        shown last as a future interface to the terrain map — it is not in the
-        current Python runtime.
+        Each processed frame follows the same geometric path. The website can
+        demonstrate A* on exported occupancy; that is not a Python ORBIT runtime
+        planner.
       </p>
       <ol className="mt-4 space-y-3">
         {stages.map((name, i) => (

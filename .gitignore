@@ -5,12 +5,17 @@ __pycache__/
 *.pyc
 *.pyo
 *.pyd
+*.egg-info/
+.DS_Store
 .env
 .vscode/
 .idea/
 web/node_modules/
 web/dist/
+web/.vite/
+*.tsbuildinfo
 exported_data/**/*.json
 exported_data/**/*.bin
 web/public/data/**/*.json
 !web/public/data/datasets.json
+!web/public/data/scene-fixture/*.json

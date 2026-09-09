@@ -525,4 +525,23 @@ This repository is a **prototype / proof-of-concept** toward the intended
 DRDO/iDEX system. PointNet++ and sparse CNN semantic perception are
 **planned future work**, not present in the Python pipeline or the website.
 
+# Phase 9 — Final polish and submission organization
+
+- Interactive Demo adaptive grid uses the same cool terrain / warm obstacle
+  palette as `/map`, Lambert lighting, and `MAX_RENDER_CELLS` sampling.
+- Object inspector shows only exported track fields; object ID labels are
+  optional.
+- Root `README.md`, `assets/screenshots`, and `submission/` placeholders for
+  SIH review. Python pipeline unchanged.
+
+## Public website deployment
+
+Vercel **Root Directory** is `web`. Build: `npm run build`. Output: `dist`.
+No environment variables. SPA fallback is `web/vercel.json`.
+
+Large frame JSON is gitignored. A public site may include only
+`datasets.json` and the small `scene-fixture` export. Other collections
+remain “Not exported yet” until JSON is copied locally or hosted separately.
+Do not commit 70+ MB synthetic frames.
+
 
