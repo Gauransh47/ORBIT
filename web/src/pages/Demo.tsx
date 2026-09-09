@@ -61,11 +61,15 @@ function selectedDetails(
   return { title: `OBJECT INSPECTOR · #${src.track_id}`, rows }
 }
 
-function modeTitle(mode: ViewMode, frame: { points_frame?: string; world_points_frame?: string }) {
+function modeTitle(mode: ViewMode, frame: { points_frame?: string; world_points_frame?: string; points?: number[][]; world_points?: number[][] }) {
   if (mode === 'lidar') {
+    const n = frame.points?.length
     return {
       kicker: 'LIDAR POINT CLOUD',
-      note: frame.points_frame ?? 'current_lidar',
+      note:
+        n != null
+          ? `${frame.points_frame ?? 'current_lidar'} · ${n.toLocaleString()} exported points in this frame`
+          : (frame.points_frame ?? 'current_lidar'),
     }
   }
   if (mode === 'world') {

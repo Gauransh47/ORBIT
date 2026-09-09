@@ -88,6 +88,37 @@ export function gridFocus(cells: AdaptiveCellRecord[]): {
   return { target, radius: span * 0.85 }
 }
 
+export function pointsFocus(points: number[][]): {
+  target: [number, number, number]
+  radius: number
+} {
+  let minX = Infinity
+  let maxX = -Infinity
+  let minY = Infinity
+  let maxY = -Infinity
+  let minZ = Infinity
+  let maxZ = -Infinity
+  let any = false
+  for (const p of points) {
+    if (!p || p.length < 3) continue
+    if (![p[0], p[1], p[2]].every(isFiniteNumber)) continue
+    const [x, y, z] = orbitToThree(p[0], p[1], p[2])
+    if (![x, y, z].every(isFiniteNumber)) continue
+    any = true
+    minX = Math.min(minX, x)
+    maxX = Math.max(maxX, x)
+    minY = Math.min(minY, y)
+    maxY = Math.max(maxY, y)
+    minZ = Math.min(minZ, z)
+    maxZ = Math.max(maxZ, z)
+  }
+  if (!any) return { target: [0, 0, 0], radius: 40 }
+  const span = Math.max(maxX - minX, maxY - minY, maxZ - minZ, 0.4)
+  const target: [number, number, number] = [(minX + maxX) / 2, (minY + maxY) / 2, (minZ + maxZ) / 2]
+  if (!target.every(isFiniteNumber)) return { target: [0, 0, 0], radius: 40 }
+  return { target, radius: span * 0.85 }
+}
+
 export function resolutionColor(resolution: number): [number, number, number] {
   if (resolution <= 0.06) return [0.45, 0.96, 1]
   if (resolution <= 0.12) return [0.28, 0.9, 0.78]
