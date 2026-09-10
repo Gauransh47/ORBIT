@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import { useThree } from '@react-three/fiber'
 import type { PerspectiveCamera } from 'three'
 import { gridFocus, pointsFocus } from '../../lib/cellVisual'
@@ -11,7 +11,7 @@ type OrbitLike = {
   update: () => void
 }
 
-/** Frame the demo camera on exported points or cells (sparse fixture clouds included). */
+/** Fit the demo camera once when the viewer mounts. Frame playback must not move it. */
 export default function ExplorerCameraRig({
   points,
   cells,
@@ -21,6 +21,7 @@ export default function ExplorerCameraRig({
 }) {
   const camera = useThree((s) => s.camera)
   const controls = useThree((s) => s.controls) as OrbitLike | null
+  const hasFitted = useRef(false)
   const focus = useMemo(() => {
     if (points.length) return pointsFocus(points)
     if (cells.length) return gridFocus(cells)
@@ -28,6 +29,8 @@ export default function ExplorerCameraRig({
   }, [points, cells])
 
   useEffect(() => {
+    if (hasFitted.current) return
+    if (!controls) return
     const [tx, ty, tz] = focus.target
     const r = Math.max(focus.radius, 0.5)
     const cam = camera as PerspectiveCamera
@@ -37,12 +40,11 @@ export default function ExplorerCameraRig({
     cam.far = Math.max(400, r * 40)
     cam.updateProjectionMatrix()
     cam.lookAt(tx, ty, tz)
-    if (controls) {
-      controls.target.set(tx, ty, tz)
-      controls.minDistance = Math.max(0.08, r * 0.12)
-      controls.maxDistance = Math.max(80, r * 18)
-      controls.update()
-    }
+    controls.target.set(tx, ty, tz)
+    controls.minDistance = Math.max(0.08, r * 0.12)
+    controls.maxDistance = Math.max(80, r * 18)
+    controls.update()
+    hasFitted.current = true
   }, [camera, controls, focus])
 
   return null

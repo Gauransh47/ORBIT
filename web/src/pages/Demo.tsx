@@ -247,6 +247,7 @@ export default function Demo() {
           {data.frame && !data.bootstrapError && !overlayError ? (
             <div className={`absolute inset-0 ${data.frameLoading ? 'opacity-70' : ''}`}>
               <ExplorerScene
+                key={baseUrl ?? collectionParam ?? 'demo'}
                 frame={data.frame}
                 mode={mode}
                 trajectory={data.trajectory}
