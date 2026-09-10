@@ -1,5 +1,8 @@
 import { DATA_PREFIX } from '../types/orbit'
 
+/** Same-origin prefix; Vite/Vercel proxy this to VITE_ORBIT_DATA_URL (avoids R2 CORS). */
+export const ORBIT_DATA_PROXY_PREFIX = '/orbit-data'
+
 /** Trim and strip trailing slashes from VITE_ORBIT_DATA_URL. Empty → local /data. */
 export function normalizeOrbitDataOrigin(raw: unknown): string | null {
   if (typeof raw !== 'string') return null
@@ -19,8 +22,8 @@ export function joinDataUrl(root: string, relativePath: string): string {
 }
 
 /**
- * Remote origin first (when set), then same-origin `/data/…` so committed
- * scene-fixture still works on Vercel if it was not uploaded to the host.
+ * When an external origin is set: absolute host, then same-origin `/orbit-data`,
+ * then `/data` (committed scene-fixture on Vercel).
  */
 export function candidateDataUrlsForOrigin(
   origin: string | null,
@@ -30,9 +33,18 @@ export function candidateDataUrlsForOrigin(
   const path = normalizeDataRelativePath(relativePath)
   const local = joinDataUrl(localPrefix, path)
   if (!origin) return [local]
-  const remote = joinDataUrl(origin, path)
-  if (remote === local) return [local]
-  return [remote, local]
+  const urls: string[] = []
+  const push = (url: string) => {
+    if (!urls.includes(url)) urls.push(url)
+  }
+  if (/^https?:\/\//i.test(origin)) {
+    push(joinDataUrl(origin, path))
+    push(joinDataUrl(ORBIT_DATA_PROXY_PREFIX, path))
+  } else {
+    push(joinDataUrl(origin, path))
+  }
+  push(local)
+  return urls
 }
 
 export function orbitDataOrigin(): string | null {

@@ -550,9 +550,11 @@ Optional **Vite build-time** variable (Vercel → Project → Settings →
 Environment Variables). Example: `https://your-dataset-host.example.com/orbit-data`.
 
 When set, registry and collection probes use `${VITE_ORBIT_DATA_URL}/<path>`
-first, then same-origin `/data/<path>` so `scene-fixture` on Vercel still
-loads if it was not uploaded to the host. Leave the variable empty for
-ordinary local `cd web && npm run dev` (files from `web/public/data/`).
+first, then same-origin `/orbit-data/<path>` (Vercel/Vite proxy; needed when
+the host has no CORS headers), then `/data/<path>` so `scene-fixture` on
+Vercel still loads if the host is missing that collection. Leave the
+variable empty for ordinary local `cd web && npm run dev` (files from
+`web/public/data/`).
 
 Upload the same tree the exporter already writes (see `datasets.json` `paths`):
 
