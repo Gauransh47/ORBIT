@@ -92,7 +92,9 @@ To serve real gitignored exports in production, upload the **same directory layo
 
 Vite inlines this at `npm run build`. After changing it, **redeploy**. Do not put credentials in this variable; the host must be publicly readable JSON.
 
-The client tries the external origin first, then same-origin `/data/…`, so `scene-fixture` on Vercel still works if it is not on the external host.
+The client tries the external origin first, then same-origin `/orbit-data/…` (Vite/Vercel proxy), then `/data/…`. `scene-fixture` on Vercel still works if the host is missing that collection.
+
+Public R2 (`*.r2.dev`) often omits CORS headers, so a direct `fetch` fails in the browser even though the URL opens in a tab. `web/vercel.json` rewrites `/orbit-data/:path*` to the public R2 origin; keep that destination in sync with `VITE_ORBIT_DATA_URL`. Local `npm run dev` uses the Vite proxy when the env var is set.
 
 Expected host layout (same paths as the exporter / `datasets.json`):
 
@@ -111,20 +113,13 @@ Each collection still needs `manifest.json` with a `files` array; frames are `fr
 
 ### CORS
 
-The browser loads JSON with `fetch`. The dataset host must allow:
-
-- `https://orbit-bice-six.vercel.app`
-- `http://localhost:5173` (local `npm run dev` against a remote host)
-
-Typical headers:
+Direct `fetch` to R2 still needs `Access-Control-Allow-Origin` for the Vercel site (and `http://localhost:5173` if you fetch R2 from local). If the bucket does not send CORS headers, the same-origin `/orbit-data` proxy is used instead. Optional bucket CORS:
 
 ```text
 Access-Control-Allow-Origin: https://orbit-bice-six.vercel.app
 Access-Control-Allow-Methods: GET, HEAD
 Access-Control-Allow-Headers: Content-Type
 ```
-
-For local + production, either list both origins or use a host that can echo the request `Origin` for those sites. No Vercel rewrite/proxy is required if CORS is set on the bucket/CDN.
 
 ## Stack
 

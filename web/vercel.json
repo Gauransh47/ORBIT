@@ -1,3 +1,9 @@
 {
-  "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }]
+  "rewrites": [
+    {
+      "source": "/orbit-data/:path*",
+      "destination": "https://pub-b6c3508bd3fe450e86080d43feebbbde.r2.dev/:path*"
+    },
+    { "source": "/(.*)", "destination": "/index.html" }
+  ]
 }
